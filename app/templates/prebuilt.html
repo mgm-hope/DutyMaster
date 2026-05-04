@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Pre-Built Duty Events</h2>
+{% if conflicts %}
+<section class="panel danger">
+    <h3>Period 4 lunch conflicts</h3>
+    <p>These must be corrected manually by clearing one side of the clash.</p>
+    <table><tr><th>Week</th><th>Day</th><th>Staff</th><th>Duties</th></tr>
+    {% for row in conflicts %}
+    <tr><td>{{ row["week"] }}</td><td>{{ row["day"] }}</td><td>{{ row["staff_initials"] }}</td><td>{{ row["duties"] }}</td></tr>
+    {% endfor %}
+    </table>
+</section>
+{% endif %}
+
+{% if selected.period %}
+<section class="panel">
+    <h3>Assign: Week {{ selected.week }} {{ selected.day }} — {{ duty_labels[selected.period] }}</h3>
+    <form method="post" action="/prebuilt/assign" class="inline-form">
+        <input type="hidden" name="week" value="{{ selected.week }}">
+        <input type="hidden" name="day" value="{{ selected.day }}">
+        <input type="hidden" name="period" value="{{ selected.period }}">
+        <select name="staff_value">
+            {% for s in candidates %}
+            <option value="{{ s.initials }}|{{ s.role }}">{{ s.initials }} — {{ s.name }} ({{ s.role }})</option>
+            {% endfor %}
+        </select>
+        <button type="submit" {% if not candidates %}disabled{% endif %}>Assign</button>
+    </form>
+    <form method="post" action="/prebuilt/clear" class="inline-form">
+        <input type="hidden" name="week" value="{{ selected.week }}">
+        <input type="hidden" name="day" value="{{ selected.day }}">
+        <input type="hidden" name="period" value="{{ selected.period }}">
+        <button type="submit" class="secondary">Clear this duty</button>
+    </form>
+</section>
+{% endif %}
+
+{% for section_name, events in duty_sections %}
+<section class="panel">
+    <h3>{{ section_name }}</h3>
+    <table class="rota-table">
+        <tr><th>Duty</th><th colspan="5">Week 1</th><th colspan="5">Week 2</th></tr>
+        <tr><th></th>{% for d in days %}<th>{{ d }}</th>{% endfor %}{% for d in days %}<th>{{ d }}</th>{% endfor %}</tr>
+        {% for code, label in events %}
+        <tr>
+            <th>{{ label }}</th>
+            {% for w in weeks %}
+                {% for d in days %}
+                {% set cell_key = w ~ ":" ~ d ~ ":" ~ code %}
+                <td><a href="/prebuilt?week={{ w }}&day={{ d }}&period={{ code }}">{{ assignments.get(cell_key, "—") or "—" }}</a></td>
+                {% endfor %}
+            {% endfor %}
+        </tr>
+        {% endfor %}
+    </table>
+</section>
+{% endfor %}
+{% endblock %}

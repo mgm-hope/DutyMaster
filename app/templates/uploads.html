@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Uploads</h2>
+<div class="grid two">
+    <section class="panel">
+        <h3>Upload timetable</h3>
+        <p>Reloading a timetable resets uploaded teachers and rota assignments but keeps additional staffing.</p>
+        <form method="post" action="/uploads/timetable" enctype="multipart/form-data" class="stack">
+            <input type="file" name="timetable" accept=".xlsx" required>
+            <button type="submit">Upload timetable</button>
+        </form>
+    </section>
+    <section class="panel">
+        <h3>Upload staff list</h3>
+        <p>CSV/XLSX with columns: Initials, Full Name.</p>
+        <form method="post" action="/uploads/staff-list" enctype="multipart/form-data" class="stack">
+            <input type="file" name="staff_list" accept=".csv,.xlsx" required>
+            <button type="submit">Upload staff list</button>
+        </form>
+    </section>
+    <section class="panel">
+        <h3>Master duty export template</h3>
+        <p>Upload 2025 MASTER DUTY FINAL.xlsx so Railway exports use the same layout.</p>
+        <form method="post" action="/uploads/master-template" enctype="multipart/form-data" class="stack">
+            <input type="file" name="master_template" accept=".xlsx" required>
+            <button type="submit">Upload master template</button>
+        </form>
+        <p class="muted">Template path: {{ template_path }}</p>
+    </section>
+    <section class="panel danger">
+        <h3>Reset uploaded timetable data</h3>
+        <form method="post" action="/uploads/reset">
+            <button type="submit" class="secondary">Reset upload data only</button>
+        </form>
+    </section>
+</div>
+{% if meta %}
+<section class="panel">
+    <h3>Current timetable</h3>
+    <p>{{ meta["school_name"] }} — {{ meta["week1_label"] }} / {{ meta["week2_label"] }}</p>
+</section>
+{% endif %}
+{% endblock %}
+

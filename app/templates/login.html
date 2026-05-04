@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel login-panel">
+    <h2>Sign in</h2>
+    <p>Enter the shared DutyMaster password.</p>
+    <form method="post" action="/login" class="stack">
+        <input type="password" name="password" placeholder="Password" autofocus required>
+        <button type="submit">Sign in</button>
+    </form>
+</section>
+{% endblock %}
+

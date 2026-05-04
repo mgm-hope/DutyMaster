@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Additional Staffing</h2>
+<section class="panel">
+    <h3>Add staff</h3>
+    <form method="post" action="/additional-staff/add" class="inline-form">
+        <input name="initials" placeholder="Initials" required>
+        <input name="full_name" placeholder="Full name" required>
+        <select name="category">
+            {% for category in ["Pastoral", "Admin", "ESLT", "Chaplaincy", "SLT"] %}
+            <option value="{{ category }}">{{ category }}</option>
+            {% endfor %}
+        </select>
+        <button type="submit">Add</button>
+    </form>
+</section>
+<table>
+    <tr><th>Initials</th><th>Name</th><th>Category</th><th>Status</th><th>Archived</th><th>Actions</th></tr>
+    {% for s in staff %}
+    <tr class="{% if s['is_archived'] %}muted-row{% endif %}">
+        <td>{{ s["initials"] }}</td><td>{{ s["full_name"] }}</td><td>{{ s["category"] }}</td>
+        <td>
+            <form method="post" action="/additional-staff/status" class="inline-form">
+                <input type="hidden" name="staff_id" value="{{ s['id'] }}">
+                <select name="status">
+                    {% for status in ["Active", "Unavailable - Return to Work", "Unavailable - Mobility", "Unavailable - Other"] %}
+                    <option value="{{ status }}" {% if s["status"] == status %}selected{% endif %}>{{ status }}</option>
+                    {% endfor %}
+                </select>
+                <button type="submit">Save</button>
+            </form>
+        </td>
+        <td>{{ "Yes" if s["is_archived"] else "No" }}</td>
+        <td>
+            <form method="post" action="/additional-staff/archive">
+                <input type="hidden" name="staff_id" value="{{ s['id'] }}">
+                <input type="hidden" name="archive" value="{{ 0 if s['is_archived'] else 1 }}">
+                <button type="submit">{{ "Restore" if s["is_archived"] else "Archive" }}</button>
+            </form>
+        </td>
+    </tr>
+    {% endfor %}
+</table>
+{% endblock %}
+

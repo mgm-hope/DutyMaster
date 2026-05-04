@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Proposed Timetable</h2>
+<p><a class="button-link" href="/proposed/download">Download Proposed Timetable - Master Duty Excel</a></p>
+<table>
+    <tr><th>Week</th><th>Day</th><th>Duty</th><th>Staff</th><th>Role</th></tr>
+    {% for a in assignments %}
+    <tr>
+        <td>{{ a["week"] }}</td><td>{{ a["day"] }}</td><td>{{ duty_labels.get(a["period"], a["period"]) }}</td>
+        <td>{{ a["staff_initials"] or "—" }}</td><td>{{ a["staff_type"] or "—" }}</td>
+    </tr>
+    {% endfor %}
+</table>
+{% endblock %}
+

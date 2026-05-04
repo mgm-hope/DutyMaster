@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ title }} | DutyMaster Online</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header class="site-header">
+        <div>
+            <p class="eyebrow">Magnus C of E Academy</p>
+            <h1>DutyMaster Online</h1>
+            <p class="tagline">School duty rota planning with a shared Railway data store.</p>
+        </div>
+        {% if is_logged_in %}
+        <form method="post" action="/logout">
+            <button class="ghost-button" type="submit">Log out</button>
+        </form>
+        {% endif %}
+    </header>
+
+    {% if is_logged_in %}
+    <nav class="main-nav">
+        <a href="/dashboard" class="{% if request.url.path.startswith('/dashboard') %}active-nav{% endif %}">Dashboard</a>
+        <a href="/uploads" class="{% if request.url.path.startswith('/uploads') %}active-nav{% endif %}">Uploads</a>
+        <a href="/teaching-loads" class="{% if request.url.path.startswith('/teaching-loads') %}active-nav{% endif %}">Teaching Loads</a>
+        <a href="/additional-staff" class="{% if request.url.path.startswith('/additional-staff') %}active-nav{% endif %}">Additional Staffing</a>
+        <a href="/prebuilt" class="{% if request.url.path.startswith('/prebuilt') %}active-nav{% endif %}">Pre-Built Events</a>
+        <a href="/proposed" class="{% if request.url.path.startswith('/proposed') %}active-nav{% endif %}">Proposed Timetable</a>
+        <a href="/problems" class="{% if request.url.path.startswith('/problems') %}active-nav{% endif %}">Narrative & Problems</a>
+    </nav>
+    {% endif %}
+
+    <main class="page-shell">
+        {% if flash %}
+        <div class="flash">{{ flash }}</div>
+        {% endif %}
+        {% block content %}{% endblock %}
+    </main>
+</body>
+</html>
+

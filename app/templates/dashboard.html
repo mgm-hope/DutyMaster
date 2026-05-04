@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Dashboard</h2>
+<div class="metrics">
+    <div class="metric"><span>Teachers</span><strong>{{ teacher_count }}</strong></div>
+    <div class="metric"><span>Additional staff</span><strong>{{ additional_count }}</strong></div>
+    <div class="metric"><span>Assigned duties</span><strong>{{ assigned_count }}</strong></div>
+    <div class="metric"><span>P4 conflicts</span><strong>{{ conflicts|length }}</strong></div>
+</div>
+<section class="panel">
+    <h3>Current upload</h3>
+    {% if meta %}
+    <p><strong>{{ meta["school_name"] }}</strong></p>
+    <p>{{ meta["week1_label"] }} / {{ meta["week2_label"] }}</p>
+    <p class="muted">Database: {{ db_path }}</p>
+    {% else %}
+    <p>No timetable uploaded yet.</p>
+    {% endif %}
+</section>
+{% if conflicts %}
+<section class="panel danger">
+    <h3>Period 4 conflicts</h3>
+    <p>Staff on P4 lunch must not also be on 4A, 4B, or 4C.</p>
+    <table>
+        <tr><th>Week</th><th>Day</th><th>Staff</th><th>Duties</th></tr>
+        {% for row in conflicts %}
+        <tr><td>{{ row["week"] }}</td><td>{{ row["day"] }}</td><td>{{ row["staff_initials"] }}</td><td>{{ row["duties"] }}</td></tr>
+        {% endfor %}
+    </table>
+</section>
+{% endif %}
+{% endblock %}
+

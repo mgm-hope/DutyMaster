@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Narrative & Problems</h2>
+<section class="panel">
+    <form method="post" action="/problems/add" class="stack">
+        <select name="issue_type">
+            <option>Insufficient Staff</option>
+            <option>Manual Intervention Required</option>
+            <option>Rule Conflict</option>
+            <option>Other</option>
+        </select>
+        <textarea name="description" placeholder="Describe the issue or decision" required></textarea>
+        <button type="submit">Log issue</button>
+    </form>
+</section>
+<table>
+    <tr><th>Time</th><th>Type</th><th>Description</th></tr>
+    {% for row in rows %}
+    <tr><td>{{ row["timestamp"] }}</td><td>{{ row["issue_type"] }}</td><td>{{ row["description"] }}</td></tr>
+    {% endfor %}
+</table>
+{% endblock %}
+
