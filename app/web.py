@@ -273,7 +273,7 @@ def teaching_loads(request: Request):
     with _conn_context() as conn:
         teachers = conn.execute(
             """
-            SELECT initials, COALESCE(s.full_name, t.full_name) AS full_name, total_lessons,
+            SELECT t.initials, COALESCE(s.full_name, t.full_name) AS full_name, total_lessons,
                    protected_periods, classification, is_part_time, days_in_school
             FROM teachers t
             LEFT JOIN staff_names s ON t.initials = s.initials
