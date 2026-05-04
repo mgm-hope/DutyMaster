@@ -1,6 +1,18 @@
 {% extends "base.html" %}
 {% block content %}
 <h2>Pre-Built Duty Events</h2>
+<section class="panel">
+    <h3>Build tools</h3>
+    <form method="post" action="/prebuilt/auto-assign" class="inline-form">
+        <button type="submit">Auto-Assign Empty Slots</button>
+    </form>
+    {% if conflicts %}
+    <form method="post" action="/prebuilt/repair-p4" class="inline-form">
+        <button type="submit" class="secondary">Repair Period 4 Lunch Conflicts</button>
+    </form>
+    {% endif %}
+</section>
+
 {% if conflicts %}
 <section class="panel danger">
     <h3>Period 4 lunch conflicts</h3>
@@ -24,6 +36,11 @@
             {% for s in candidates %}
             <option value="{{ s.initials }}|{{ s.role }}">{{ s.initials }} — {{ s.name }} ({{ s.role }})</option>
             {% endfor %}
+        </select>
+        <select name="scope">
+            <option value="single">This session only</option>
+            <option value="week">All episodes of this duty this week when available</option>
+            <option value="both">All episodes of this duty across both weeks when available</option>
         </select>
         <button type="submit" {% if not candidates %}disabled{% endif %}>Assign</button>
     </form>

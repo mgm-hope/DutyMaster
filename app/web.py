@@ -30,12 +30,14 @@ from .constants import (
 from .database import DB_PATH, get_connection, initialise_database
 from .services import (
     assign_staff,
+    auto_assign_empty_slots,
     available_staff,
     build_master_style_workbook,
     ensure_duty_event_rows,
     get_p4_lunch_conflicts,
     parse_timetable,
     reset_upload_data,
+    repair_p4_lunch_conflicts,
     save_parsed_timetable,
 )
 
@@ -200,8 +202,8 @@ async def upload_timetable(request: Request, timetable: UploadFile = File(...)):
     parsed = parse_timetable(target)
     with _conn_context() as conn:
         save_parsed_timetable(conn, parsed)
-    _flash(request, f"Uploaded timetable: {len(parsed['teachers'])} teachers parsed.")
-    return RedirectResponse("/uploads", status_code=303)
+    _flash(request, f"Uploaded timetable: {len(parsed['teachers'])} teachers parsed. Teaching Loads is ready to review.")
+    return RedirectResponse("/teaching-loads", status_code=303)
 
 
 @app.post("/uploads/staff-list")
@@ -404,15 +406,31 @@ async def prebuilt_assign(
     day: str = Form(...),
     period: str = Form(...),
     staff_value: str = Form(...),
+    scope: str = Form("single"),
 ):
     redirect = _require_login(request)
     if redirect:
         return redirect
     initials, role = staff_value.split("|", 1)
+    targets = [(week, day)]
+    if scope == "week":
+        targets = [(week, target_day) for target_day in ROTA_DAYS]
+    elif scope == "both":
+        targets = [(target_week, target_day) for target_week in ROTA_WEEKS for target_day in ROTA_DAYS]
+    assigned = 0
+    skipped = 0
+    cleared = 0
     with _conn_context() as conn:
-        cleared = assign_staff(conn, week, day, period, initials, role)
-    note = f" Cleared {cleared} Period 4 clash(es)." if cleared else ""
-    _flash(request, f"Assigned {initials} to {DUTY_LABELS.get(period, period)}.{note}")
+        for target_week, target_day in targets:
+            possible = available_staff(conn, target_week, target_day, period)
+            if not any(item["initials"] == initials and item["role"] == role for item in possible):
+                skipped += 1
+                continue
+            cleared += assign_staff(conn, target_week, target_day, period, initials, role)
+            assigned += 1
+    clear_note = f" Cleared {cleared} Period 4 clash(es)." if cleared else ""
+    skip_note = f" Skipped {skipped} unavailable/busy session(s)." if skipped else ""
+    _flash(request, f"Assigned {initials} to {assigned} session(s).{skip_note}{clear_note}")
     return RedirectResponse(f"/prebuilt?week={week}&day={day}&period={period}", status_code=303)
 
 
@@ -428,6 +446,31 @@ async def prebuilt_clear(request: Request, week: int = Form(...), day: str = For
         )
         conn.commit()
     return RedirectResponse(f"/prebuilt?week={week}&day={day}&period={period}", status_code=303)
+
+
+@app.post("/prebuilt/repair-p4")
+async def prebuilt_repair_p4(request: Request):
+    redirect = _require_login(request)
+    if redirect:
+        return redirect
+    with _conn_context() as conn:
+        cleared = repair_p4_lunch_conflicts(conn)
+    _flash(request, f"Repaired Period 4 lunch conflicts. Cleared {cleared} 4A/4B/4C assignment(s).")
+    return RedirectResponse("/prebuilt", status_code=303)
+
+
+@app.post("/prebuilt/auto-assign")
+async def prebuilt_auto_assign(request: Request):
+    redirect = _require_login(request)
+    if redirect:
+        return redirect
+    with _conn_context() as conn:
+        result = auto_assign_empty_slots(conn)
+    _flash(
+        request,
+        f"Auto-assigned {result['assigned']} slot(s). {result['issues']} need manual review. Repaired {result['repaired']} Period 4 conflict(s).",
+    )
+    return RedirectResponse("/prebuilt", status_code=303)
 
 
 @app.get("/proposed", response_class=HTMLResponse)

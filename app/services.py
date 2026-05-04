@@ -289,6 +289,34 @@ def role_priority(role: str) -> int:
     return {"Pastoral": 0, "SLT": 1, "HOF": 2, "Teacher": 3, "ESLT": 4, "Chaplaincy": 5, "Admin": 6}.get(role, 9)
 
 
+def duty_is_heavy(code: str) -> bool:
+    return "Isolation" in code or "Lunch" in code or "Detention" in code
+
+
+def role_priority_for_duty(code: str) -> list[str]:
+    if code == "Gate":
+        return ["SLT"]
+    if code in {"Tutor_1st_Duty", "Tutor_AOW", "P1_Isolation"}:
+        return ["SLT"]
+    if code == "Break_Duty_Lead":
+        return ["SLT", "Pastoral"]
+    if code == "Break_Late_Detention":
+        return ["Pastoral"]
+    if "Pastoral_Support" in code or "Room_90" in code:
+        return ["Pastoral", "SLT"]
+    if "Isolation" in code:
+        return ["Pastoral", "SLT"]
+    if "First_Duty" in code:
+        return ["Pastoral", "SLT"]
+    if code == "P4_Lunch_1":
+        return ["Pastoral"]
+    if code.startswith("P4_Lunch_"):
+        return ["Teacher", "HOF", "ESLT", "Chaplaincy", "Admin", "SLT"]
+    if code.startswith("P7_Detention"):
+        return ["Pastoral", "SLT", "Teacher", "HOF"]
+    return ["Pastoral", "SLT", "Teacher", "HOF", "ESLT", "Chaplaincy", "Admin"]
+
+
 def available_staff(conn: sqlite3.Connection, week: int, day: str, code: str) -> list[dict]:
     staff = []
     for row in conn.execute("SELECT initials, full_name, classification FROM teachers ORDER BY initials").fetchall():
@@ -356,6 +384,143 @@ def get_p4_lunch_conflicts(conn: sqlite3.Connection) -> list[sqlite3.Row]:
         ORDER BY week, day, staff_initials
         """
     ).fetchall()
+
+
+def repair_p4_lunch_conflicts(conn: sqlite3.Connection) -> int:
+    conflicts = get_p4_lunch_conflicts(conn)
+    cleared = 0
+    for row in conflicts:
+        cursor = conn.execute(
+            """
+            UPDATE rota_assignments
+            SET staff_initials = NULL, staff_type = NULL, last_updated = ?
+            WHERE week = ? AND day = ? AND staff_initials = ?
+              AND (period LIKE 'P4A_%' OR period LIKE 'P4B_%' OR period LIKE 'P4C_%')
+            """,
+            (datetime.now().isoformat(), row["week"], row["day"], row["staff_initials"]),
+        )
+        cleared += cursor.rowcount
+    conn.commit()
+    return cleared
+
+
+def duty_sort_key(slot: sqlite3.Row | tuple[int, str, str]) -> tuple:
+    week, day, code = (slot["week"], slot["day"], slot["period"]) if hasattr(slot, "keys") else slot
+    priority = 50
+    if code == "Gate":
+        priority = 0
+    elif code == "P1_Isolation":
+        priority = 1
+    elif code == "Tutor_1st_Duty":
+        priority = 2
+    elif code == "Break_Duty_Lead":
+        priority = 3
+    elif code.startswith("P7_Detention"):
+        priority = 4
+    elif code.startswith("P4_Lunch"):
+        priority = 5
+    elif "Isolation" in code:
+        priority = 6
+    return (priority, week, ROTA_DAYS.index(day), DUTY_ORDER.get(code, 999))
+
+
+def auto_assign_empty_slots(conn: sqlite3.Connection) -> dict:
+    ensure_duty_event_rows(conn)
+    pre_repaired = repair_p4_lunch_conflicts(conn)
+
+    candidates = []
+    for row in conn.execute(
+        """
+        SELECT initials, classification AS role, total_lessons, protected_periods, days_in_school
+        FROM teachers
+        """
+    ).fetchall():
+        days = (row["days_in_school"] or "1111111111").ljust(10, "1")[:10]
+        max_load = 70 - (6.5 * days.count("0"))
+        current_duties = conn.execute("SELECT COUNT(*) AS count FROM rota_assignments WHERE staff_initials = ?", (row["initials"],)).fetchone()["count"]
+        heavy_rows = conn.execute("SELECT period FROM rota_assignments WHERE staff_initials = ?", (row["initials"],)).fetchall()
+        heavy_count = sum(1 for heavy in heavy_rows if duty_is_heavy(heavy["period"]))
+        candidates.append(
+            {
+                "initials": row["initials"],
+                "role": row["role"],
+                "available": max_load - float(row["total_lessons"] or 0) - int(row["protected_periods"] or 0) - current_duties,
+                "duties": current_duties,
+                "heavy": heavy_count,
+                "source": "teacher",
+            }
+        )
+
+    for row in conn.execute(
+        """
+        SELECT initials, category AS role FROM additional_staff
+        WHERE COALESCE(is_archived, 0) = 0 AND COALESCE(status, 'Active') = 'Active'
+        """
+    ).fetchall():
+        current_duties = conn.execute("SELECT COUNT(*) AS count FROM rota_assignments WHERE staff_initials = ?", (row["initials"],)).fetchone()["count"]
+        heavy_rows = conn.execute("SELECT period FROM rota_assignments WHERE staff_initials = ?", (row["initials"],)).fetchall()
+        heavy_count = sum(1 for heavy in heavy_rows if duty_is_heavy(heavy["period"]))
+        candidates.append(
+            {
+                "initials": row["initials"],
+                "role": row["role"],
+                "available": 999,
+                "duties": current_duties,
+                "heavy": heavy_count,
+                "source": "additional",
+            }
+        )
+
+    empty_slots = conn.execute(
+        "SELECT week, day, period FROM rota_assignments WHERE staff_initials IS NULL"
+    ).fetchall()
+    assigned = 0
+    issues = []
+    for slot in sorted(empty_slots, key=duty_sort_key):
+        week, day, code = slot["week"], slot["day"], slot["period"]
+        allowed_roles = role_priority_for_duty(code)
+        eligible = []
+        for cand in candidates:
+            if cand["role"] not in allowed_roles:
+                continue
+            if cand["source"] == "teacher":
+                ok = teacher_available(conn, cand["initials"], week, day, code)
+            else:
+                ok = additional_available(conn, cand["initials"], week, day, code)
+            if not ok:
+                continue
+            eligible.append((allowed_roles.index(cand["role"]), -cand["available"], cand["duties"], cand["heavy"], cand["initials"], cand))
+        if not eligible:
+            issues.append(slot)
+            continue
+        eligible.sort()
+        chosen = eligible[0][-1]
+        clear_conflicting_p4_assignments(conn, chosen["initials"], week, day, code)
+        conn.execute(
+            """
+            UPDATE rota_assignments
+            SET staff_initials = ?, staff_type = ?, last_updated = ?
+            WHERE week = ? AND day = ? AND period = ?
+            """,
+            (chosen["initials"], chosen["role"], datetime.now().isoformat(), week, day, code),
+        )
+        chosen["duties"] += 1
+        chosen["available"] -= 1
+        if duty_is_heavy(code):
+            chosen["heavy"] += 1
+        assigned += 1
+
+    for slot in issues:
+        conn.execute(
+            """
+            INSERT INTO problem_log(issue_type, description, week, day, period)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            ("Insufficient Staff", f"Auto-assign could not fill {DUTY_LABELS.get(slot['period'], slot['period'])}", slot["week"], slot["day"], slot["period"]),
+        )
+    conn.commit()
+    post_repaired = repair_p4_lunch_conflicts(conn)
+    return {"assigned": assigned, "issues": len(issues), "repaired": pre_repaired + post_repaired}
 
 
 def build_master_style_workbook(conn: sqlite3.Connection) -> BytesIO:
@@ -449,4 +614,3 @@ def build_master_style_workbook(conn: sqlite3.Connection) -> BytesIO:
     wb.save(output)
     output.seek(0)
     return output
-
