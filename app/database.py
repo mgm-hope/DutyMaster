@@ -60,6 +60,7 @@ CREATE TABLE IF NOT EXISTS additional_staff (
     initials TEXT UNIQUE NOT NULL,
     full_name TEXT NOT NULL,
     is_full_time INTEGER DEFAULT 1,
+    days_in_school TEXT DEFAULT '1111111111',
     availability TEXT,
     is_archived INTEGER DEFAULT 0,
     status TEXT DEFAULT 'Active',
@@ -130,6 +131,7 @@ def initialise_database(path: Path | None = None) -> sqlite3.Connection:
 
 def migrate_database(conn: sqlite3.Connection) -> None:
     _ensure_column(conn, "teachers", "days_in_school", "TEXT DEFAULT '1111111111'")
+    _ensure_column(conn, "additional_staff", "days_in_school", "TEXT DEFAULT '1111111111'")
     _ensure_column(conn, "additional_staff", "is_archived", "INTEGER DEFAULT 0")
     _ensure_column(conn, "additional_staff", "status", "TEXT DEFAULT 'Active'")
 
@@ -149,4 +151,3 @@ def seed_defaults(conn: sqlite3.Connection) -> None:
         "INSERT OR IGNORE INTO rules(name, description) VALUES (?, ?)",
         DEFAULT_RULES,
     )
-

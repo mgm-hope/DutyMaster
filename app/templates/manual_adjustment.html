@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Manual Adjustment</h2>
+<section class="panel">
+    <h3>Final override area</h3>
+    <p>Use this page for deliberate manual overrides after pre-build and auto-assign. It uses the same duty grid, but shows all active staff instead of only rule-filtered candidates.</p>
+</section>
+
+{% if selected.period %}
+<section class="panel">
+    <h3>Adjust: Week {{ selected.week }} {{ selected.day }} — {{ duty_labels[selected.period] }}</h3>
+    <form method="post" action="/manual-adjustment/assign" class="inline-form">
+        <input type="hidden" name="week" value="{{ selected.week }}">
+        <input type="hidden" name="day" value="{{ selected.day }}">
+        <input type="hidden" name="period" value="{{ selected.period }}">
+        <select name="staff_value">
+            {% for s in staff %}
+            <option value="{{ s.initials }}|{{ s.role }}">{{ s.initials }} — {{ s.name }} ({{ s.role }})</option>
+            {% endfor %}
+        </select>
+        <button type="submit">Save manual adjustment</button>
+    </form>
+    <form method="post" action="/manual-adjustment/clear" class="inline-form">
+        <input type="hidden" name="week" value="{{ selected.week }}">
+        <input type="hidden" name="day" value="{{ selected.day }}">
+        <input type="hidden" name="period" value="{{ selected.period }}">
+        <button type="submit" class="secondary">Clear this duty</button>
+    </form>
+</section>
+{% endif %}
+
+{% for section_name, events in duty_sections %}
+<section class="panel">
+    <h3>{{ section_name }}</h3>
+    <table class="rota-table">
+        <tr><th>Duty</th><th colspan="5">Week 1</th><th colspan="5">Week 2</th></tr>
+        <tr><th></th>{% for d in days %}<th>{{ d }}</th>{% endfor %}{% for d in days %}<th>{{ d }}</th>{% endfor %}</tr>
+        {% for code, label in events %}
+        <tr>
+            <th>{{ label }}</th>
+            {% for w in weeks %}
+                {% for d in days %}
+                {% set cell_key = w ~ ":" ~ d ~ ":" ~ code %}
+                <td><a href="/manual-adjustment?week={{ w }}&day={{ d }}&period={{ code }}">{{ assignments.get(cell_key, "—") or "—" }}</a></td>
+                {% endfor %}
+            {% endfor %}
+        </tr>
+        {% endfor %}
+    </table>
+</section>
+{% endfor %}
+{% endblock %}
+

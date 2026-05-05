@@ -275,12 +275,17 @@ def teacher_available(conn: sqlite3.Connection, initials: str, week: int, day: s
 def additional_available(conn: sqlite3.Connection, initials: str, week: int, day: str, code: str) -> bool:
     row = conn.execute(
         """
-        SELECT status FROM additional_staff
+        SELECT status, COALESCE(days_in_school, '1111111111') AS days_in_school
+        FROM additional_staff
         WHERE initials = ? AND COALESCE(is_archived, 0) = 0
         """,
         (initials,),
     ).fetchone()
     if not row or (row["status"] or "Active") != "Active":
+        return False
+    days = (row["days_in_school"] or "1111111111").ljust(10, "1")[:10]
+    idx = (week - 1) * 5 + ROTA_DAYS.index(day)
+    if days[idx] != "1":
         return False
     return not same_time_assignment_exists(conn, initials, week, day, code)
 

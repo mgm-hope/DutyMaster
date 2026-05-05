@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Rules</h2>
+<section class="panel">
+    <h3>Active rule controls</h3>
+    <p>Rules are active by default. Toggle a rule off only when you need to make a deliberate exception.</p>
+</section>
+
+<table>
+    <tr><th>Rule</th><th>Description</th><th>Status</th><th>Action</th></tr>
+    {% for rule in rules %}
+    <tr>
+        <td><strong>{{ rule["name"] }}</strong></td>
+        <td>{{ rule["description"] }}</td>
+        <td>{{ "Active" if rule["active"] else "Inactive" }}</td>
+        <td>
+            <form method="post" action="/rules/toggle" class="inline-form">
+                <input type="hidden" name="rule_id" value="{{ rule['id'] }}">
+                <input type="hidden" name="active" value="{{ 0 if rule['active'] else 1 }}">
+                <button type="submit" class="{{ 'secondary' if rule['active'] else '' }}">
+                    {{ "Deactivate" if rule["active"] else "Activate" }}
+                </button>
+            </form>
+        </td>
+    </tr>
+    {% endfor %}
+</table>
+{% endblock %}
+

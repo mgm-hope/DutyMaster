@@ -337,7 +337,15 @@ def additional_staff(request: Request):
     if redirect:
         return redirect
     with _conn_context() as conn:
-        staff = conn.execute("SELECT * FROM additional_staff ORDER BY is_archived, category, initials").fetchall()
+        staff = conn.execute(
+            """
+            SELECT id, category, initials, full_name, is_full_time,
+                   COALESCE(days_in_school, '1111111111') AS days_in_school,
+                   is_archived, COALESCE(status, 'Active') AS status
+            FROM additional_staff
+            ORDER BY is_archived, category, initials
+            """
+        ).fetchall()
     return templates.TemplateResponse("additional_staff.html", _base_context(request, "Additional Staffing", staff=staff))
 
 
@@ -355,8 +363,8 @@ async def add_additional_staff(
         try:
             conn.execute(
                 """
-                INSERT INTO additional_staff(category, initials, full_name, is_full_time, availability, last_updated)
-                VALUES (?, ?, ?, 1, NULL, ?)
+                INSERT INTO additional_staff(category, initials, full_name, is_full_time, days_in_school, availability, last_updated)
+                VALUES (?, ?, ?, 1, '1111111111', NULL, ?)
                 """,
                 (category, initials.strip().upper(), full_name.strip(), datetime.now().isoformat()),
             )
@@ -375,6 +383,30 @@ async def update_additional_status(request: Request, staff_id: int = Form(...), 
     with _conn_context() as conn:
         conn.execute("UPDATE additional_staff SET status = ?, last_updated = ? WHERE id = ?", (status, datetime.now().isoformat(), staff_id))
         conn.commit()
+    return RedirectResponse("/additional-staff", status_code=303)
+
+
+@app.post("/additional-staff/availability")
+async def update_additional_availability(
+    request: Request,
+    staff_id: int = Form(...),
+    days_in_school: str = Form(...),
+):
+    redirect = _require_login(request)
+    if redirect:
+        return redirect
+    days = "".join("1" if char == "1" else "0" for char in days_in_school)[:10].ljust(10, "1")
+    with _conn_context() as conn:
+        conn.execute(
+            """
+            UPDATE additional_staff
+            SET days_in_school = ?, is_full_time = ?, last_updated = ?
+            WHERE id = ?
+            """,
+            (days, 0 if "0" in days else 1, datetime.now().isoformat(), staff_id),
+        )
+        conn.commit()
+    _flash(request, "Additional staff availability updated.")
     return RedirectResponse("/additional-staff", status_code=303)
 
 
@@ -466,6 +498,21 @@ async def prebuilt_clear(request: Request, week: int = Form(...), day: str = For
     return RedirectResponse(f"/prebuilt?week={week}&day={day}&period={period}", status_code=303)
 
 
+@app.post("/prebuilt/clear-all")
+async def prebuilt_clear_all(request: Request, confirm: str = Form("")):
+    redirect = _require_login(request)
+    if redirect:
+        return redirect
+    if confirm.strip().upper() != "CLEAR":
+        _flash(request, "Type CLEAR to confirm clearing all assignments.")
+        return RedirectResponse("/prebuilt", status_code=303)
+    with _conn_context() as conn:
+        conn.execute("UPDATE rota_assignments SET staff_initials = NULL, staff_type = NULL, last_updated = ?", (datetime.now().isoformat(),))
+        conn.commit()
+    _flash(request, "All duty assignments cleared.")
+    return RedirectResponse("/prebuilt", status_code=303)
+
+
 @app.post("/prebuilt/repair-p4")
 async def prebuilt_repair_p4(request: Request):
     redirect = _require_login(request)
@@ -489,6 +536,107 @@ async def prebuilt_auto_assign(request: Request):
         f"Auto-assigned {result['assigned']} slot(s). {result['issues']} need manual review. Repaired {result['repaired']} Period 4 conflict(s).",
     )
     return RedirectResponse("/prebuilt", status_code=303)
+
+
+@app.get("/rules", response_class=HTMLResponse)
+def rules_page(request: Request):
+    redirect = _require_login(request)
+    if redirect:
+        return redirect
+    with _conn_context() as conn:
+        rules = conn.execute("SELECT id, name, description, active FROM rules ORDER BY id").fetchall()
+    return templates.TemplateResponse("rules.html", _base_context(request, "Rules", rules=rules))
+
+
+@app.post("/rules/toggle")
+async def rules_toggle(request: Request, rule_id: int = Form(...), active: int = Form(0)):
+    redirect = _require_login(request)
+    if redirect:
+        return redirect
+    with _conn_context() as conn:
+        conn.execute(
+            "UPDATE rules SET active = ?, last_updated = ? WHERE id = ?",
+            (1 if active else 0, datetime.now().isoformat(), rule_id),
+        )
+        conn.commit()
+    return RedirectResponse("/rules", status_code=303)
+
+
+@app.get("/manual-adjustment", response_class=HTMLResponse)
+def manual_adjustment(request: Request, week: int = 1, day: str = "Mon", period: str | None = None):
+    redirect = _require_login(request)
+    if redirect:
+        return redirect
+    with _conn_context() as conn:
+        ensure_duty_event_rows(conn)
+        assignments = {
+            f"{row['week']}:{row['day']}:{row['period']}": row["staff_initials"] or ""
+            for row in conn.execute("SELECT week, day, period, staff_initials FROM rota_assignments").fetchall()
+        }
+        staff = []
+        for row in conn.execute(
+            """
+            SELECT initials, COALESCE(full_name, initials) AS name, classification AS role
+            FROM teachers
+            ORDER BY initials
+            """
+        ).fetchall():
+            staff.append({"initials": row["initials"], "name": row["name"], "role": row["role"]})
+        for row in conn.execute(
+            """
+            SELECT initials, full_name AS name, category AS role
+            FROM additional_staff
+            WHERE COALESCE(is_archived, 0) = 0
+            ORDER BY category, initials
+            """
+        ).fetchall():
+            staff.append({"initials": row["initials"], "name": row["name"], "role": row["role"]})
+    return templates.TemplateResponse(
+        "manual_adjustment.html",
+        _base_context(
+            request,
+            "Manual Adjustment",
+            duty_sections=DUTY_SECTIONS,
+            duty_labels=DUTY_LABELS,
+            assignments=assignments,
+            selected={"week": week, "day": day, "period": period},
+            staff=staff,
+        ),
+    )
+
+
+@app.post("/manual-adjustment/assign")
+async def manual_adjustment_assign(
+    request: Request,
+    week: int = Form(...),
+    day: str = Form(...),
+    period: str = Form(...),
+    staff_value: str = Form(...),
+):
+    redirect = _require_login(request)
+    if redirect:
+        return redirect
+    initials, role = staff_value.split("|", 1)
+    with _conn_context() as conn:
+        cleared = assign_staff(conn, week, day, period, initials, role)
+    note = f" Cleared {cleared} Period 4 clash(es)." if cleared else ""
+    _flash(request, f"Manual adjustment saved for {initials}.{note}")
+    return RedirectResponse(f"/manual-adjustment?week={week}&day={day}&period={period}", status_code=303)
+
+
+@app.post("/manual-adjustment/clear")
+async def manual_adjustment_clear(request: Request, week: int = Form(...), day: str = Form(...), period: str = Form(...)):
+    redirect = _require_login(request)
+    if redirect:
+        return redirect
+    with _conn_context() as conn:
+        conn.execute(
+            "UPDATE rota_assignments SET staff_initials = NULL, staff_type = NULL, last_updated = ? WHERE week = ? AND day = ? AND period = ?",
+            (datetime.now().isoformat(), week, day, period),
+        )
+        conn.commit()
+    _flash(request, "Manual assignment cleared.")
+    return RedirectResponse(f"/manual-adjustment?week={week}&day={day}&period={period}", status_code=303)
 
 
 @app.get("/proposed", response_class=HTMLResponse)

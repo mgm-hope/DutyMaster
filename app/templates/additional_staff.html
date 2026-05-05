@@ -15,10 +15,18 @@
     </form>
 </section>
 <table>
-    <tr><th>Initials</th><th>Name</th><th>Category</th><th>Status</th><th>Archived</th><th>Actions</th></tr>
+    <tr><th>Initials</th><th>Name</th><th>Category</th><th>Days in school</th><th>Status</th><th>Archived</th><th>Actions</th></tr>
     {% for s in staff %}
     <tr class="{% if s['is_archived'] %}muted-row{% endif %}">
         <td>{{ s["initials"] }}</td><td>{{ s["full_name"] }}</td><td>{{ s["category"] }}</td>
+        <td>
+            <form method="post" action="/additional-staff/availability" class="inline-form">
+                <input type="hidden" name="staff_id" value="{{ s['id'] }}">
+                <input name="days_in_school" value="{{ s['days_in_school'] or '1111111111' }}" maxlength="10">
+                <button type="submit">Save days</button>
+            </form>
+            <span class="muted">{{ "Full time" if s["is_full_time"] else "Part time" }}</span>
+        </td>
         <td>
             <form method="post" action="/additional-staff/status" class="inline-form">
                 <input type="hidden" name="staff_id" value="{{ s['id'] }}">
@@ -42,4 +50,3 @@
     {% endfor %}
 </table>
 {% endblock %}
-

@@ -6,6 +6,10 @@
     <form method="post" action="/prebuilt/auto-assign" class="inline-form">
         <button type="submit">Auto-Assign Empty Slots</button>
     </form>
+    <form method="post" action="/prebuilt/clear-all" class="inline-form">
+        <input name="confirm" placeholder="Type CLEAR">
+        <button type="submit" class="secondary">Clear All Assignments</button>
+    </form>
     {% if conflicts %}
     <form method="post" action="/prebuilt/repair-p4" class="inline-form">
         <button type="submit" class="secondary">Repair Period 4 Lunch Conflicts</button>
