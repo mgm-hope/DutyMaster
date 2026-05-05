@@ -99,15 +99,29 @@ CREATE TABLE IF NOT EXISTS problem_log (
 
 
 DEFAULT_RULES = [
-    ("Gate Duty = SLT Only", "Gate Duty (08:00) can only be assigned to SLT members"),
-    ("Monday P6 = AOW", "Monday Period 6 is automatically AOW for all staff unless they teach P6"),
-    ("Tutor First Duty = SLT", "First duty during Tutor Time must be SLT"),
-    ("Pastoral Roles", "Pastoral Support, Room 90, and Isolation prefer Pastoral staff then SLT"),
-    ("Period 4 Lunch Rules", "7 staff total, 1 Pastoral minimum, max 2 SLT, no P4 teaching clash"),
-    ("Period 4 Mutual Exclusion", "Staff cannot be on P4 lunch and 4A/4B/4C duties on the same day"),
-    ("Period 7 Detention = 2 Staff", "Exactly 2 staff required for detention duty"),
-    ("Part-Time Day Protection", "Do not assign staff on days they are out of school"),
-    ("Respect Protected Periods", "Keep each teacher's protected periods free where possible"),
+    ("Gate Duty = SLT Only", "Gate Duty (08:00) can only be assigned to SLT members."),
+    ("Monday P6 = AOW", "Monday Period 6 is automatically Act of Worship for all staff unless they have a real class recorded in the imported timetable. AOW counts as teaching time."),
+    ("Tutor First Duty = SLT", "First duty during Tutor Time must be SLT and must be distinct from assembly/AOW staff."),
+    ("Tutor Pastoral Layers = Pastoral", "Pastoral Support, Room 90, and Isolation during Tutor Time are staffed by Pastoral department members where possible."),
+    ("Period 4 Lunch Rules", "Lunch duty requires 7 staff total, at least 1 Pastoral member, ideally no more than 2 SLT, excludes staff teaching Period 4, and respects protected periods and part-time days."),
+    ("Period 7 Detention = 2 Staff", "Period 7 detention duty requires exactly 2 staff."),
+    ("Break Duty Lead = SLT or Pastoral", "Break Duty Lead can only be assigned to SLT or Pastoral staff."),
+    ("Even SLT Isolation Distribution", "SLT isolation duties should be spread as evenly as possible across participating SLT members."),
+    ("Even Pastoral Distribution", "Pastoral staff should be spread evenly across Pastoral Support, Room 90, Isolation, late detention, and lunch pastoral duties."),
+    ("No Double Booking", "Staff cannot be assigned to two duties in the same time slot."),
+    ("Part-Time Day Protection", "Staff cannot be assigned duties on days they are marked out of school."),
+    ("Respect Protected Periods", "Teachers must keep their personal protected-period allowance from Teaching Loads where possible."),
+    ("Max Duties Per Week", "No staff member should exceed the configured maximum duties per week where possible."),
+    ("No Consecutive Heavy Duties", "Avoid assigning Isolation, Lunch, and Detention heavy duties to the same person repeatedly or back-to-back where possible."),
+    ("Trained Staff Only for Isolation", "Isolation should only be assigned to staff marked/understood as suitable for isolation duty."),
+    ("Respect Prepopulation", "Auto-build must not overwrite manually pre-populated assignments."),
+    ("Isolation = SLT or Pastoral Only", "Isolation duties can only be assigned to SLT or Pastoral staff."),
+    ("Period 1 Isolation = SLT Only", "Period 1 Isolation is covered by SLT, not Pastoral. Only selected/participating SLT should be used."),
+    ("First Duty Other Periods = SLT or Pastoral", "First Duty outside Tutor Time can be assigned to any available SLT or Pastoral member."),
+    ("Late Detention at Break = Pastoral", "Late Detention at Break is staffed by a Pastoral department member and should be distributed evenly if multiple Pastoral staff are available."),
+    ("Period 4 Mutual Exclusion", "Staff assigned to Period 4 Lunch cannot also be assigned to 4A, 4B, or 4C duties on the same day, and vice versa."),
+    ("Lunch Fill Order", "After suitable teachers are used for lunch duty, fill remaining lunch spaces from ESLT, then Chaplaincy, then Admin, and finally SLT."),
+    ("Lunch Off-Duty / Rest Protection", "During Period 4 split lunch, Pastoral allocation must preserve the intended rest/off-duty rotation across 4A, 4B, and 4C where possible."),
 ]
 
 
@@ -151,3 +165,5 @@ def seed_defaults(conn: sqlite3.Connection) -> None:
         "INSERT OR IGNORE INTO rules(name, description) VALUES (?, ?)",
         DEFAULT_RULES,
     )
+    for name, description in DEFAULT_RULES:
+        conn.execute("UPDATE rules SET description = COALESCE(NULLIF(description, ''), ?) WHERE name = ?", (description, name))
