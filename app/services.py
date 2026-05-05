@@ -434,10 +434,33 @@ def role_priority_for_duty(code: str) -> list[str]:
     return ["Pastoral", "SLT", "Teacher", "HOF", "ESLT", "Chaplaincy", "Admin"]
 
 
+def strict_assignment_allowed(
+    conn: sqlite3.Connection,
+    initials: str,
+    role: str,
+    week: int,
+    day: str,
+    code: str,
+    source: str | None = None,
+) -> bool:
+    allowed_roles = role_priority_for_duty(code)
+    if role not in allowed_roles:
+        return False
+    if source is None:
+        source = "teacher" if conn.execute("SELECT 1 FROM teachers WHERE initials = ?", (initials,)).fetchone() else "additional"
+    if source == "teacher":
+        if not teacher_available(conn, initials, week, day, code):
+            return False
+    else:
+        if not additional_available(conn, initials, week, day, code):
+            return False
+    return custom_rules_allow(conn, initials, role, week, day, code)
+
+
 def available_staff(conn: sqlite3.Connection, week: int, day: str, code: str) -> list[dict]:
     staff = []
     for row in conn.execute("SELECT initials, full_name, classification FROM teachers ORDER BY initials").fetchall():
-        if teacher_available(conn, row["initials"], week, day, code) and custom_rules_allow(conn, row["initials"], row["classification"], week, day, code):
+        if strict_assignment_allowed(conn, row["initials"], row["classification"], week, day, code, "teacher"):
             staff.append({"initials": row["initials"], "name": row["full_name"], "role": row["classification"]})
     for row in conn.execute(
         """
@@ -446,7 +469,7 @@ def available_staff(conn: sqlite3.Connection, week: int, day: str, code: str) ->
         ORDER BY category, initials
         """
     ).fetchall():
-        if additional_available(conn, row["initials"], week, day, code) and custom_rules_allow(conn, row["initials"], row["category"], week, day, code):
+        if strict_assignment_allowed(conn, row["initials"], row["category"], week, day, code, "additional"):
             staff.append({"initials": row["initials"], "name": row["full_name"], "role": row["category"]})
     return sorted(staff, key=lambda item: (role_priority(item["role"]), item["initials"]))
 
@@ -475,7 +498,9 @@ def clear_conflicting_p4_assignments(conn: sqlite3.Connection, initials: str, we
 
 
 def assign_staff(conn: sqlite3.Connection, week: int, day: str, code: str, initials: str, role: str) -> int:
-    cleared = clear_conflicting_p4_assignments(conn, initials, week, day, code)
+    if not strict_assignment_allowed(conn, initials, role, week, day, code):
+        return -1
+    cleared = 0
     conn.execute(
         """
         UPDATE rota_assignments
@@ -598,15 +623,7 @@ def auto_assign_empty_slots(conn: sqlite3.Connection) -> dict:
         allowed_roles = role_priority_for_duty(code)
         eligible = []
         for cand in candidates:
-            if cand["role"] not in allowed_roles:
-                continue
-            if cand["source"] == "teacher":
-                ok = teacher_available(conn, cand["initials"], week, day, code)
-            else:
-                ok = additional_available(conn, cand["initials"], week, day, code)
-            if not ok:
-                continue
-            if not custom_rules_allow(conn, cand["initials"], cand["role"], week, day, code):
+            if not strict_assignment_allowed(conn, cand["initials"], cand["role"], week, day, code, cand["source"]):
                 continue
             eligible.append((allowed_roles.index(cand["role"]), -cand["available"], cand["duties"], cand["heavy"], cand["initials"], cand))
         if not eligible:
@@ -614,7 +631,6 @@ def auto_assign_empty_slots(conn: sqlite3.Connection) -> dict:
             continue
         eligible.sort()
         chosen = eligible[0][-1]
-        clear_conflicting_p4_assignments(conn, chosen["initials"], week, day, code)
         conn.execute(
             """
             UPDATE rota_assignments

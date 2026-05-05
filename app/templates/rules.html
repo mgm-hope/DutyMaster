@@ -157,7 +157,9 @@
     <p>
         The allocator first applies the built-in DutyMaster rules, then applies active hard custom rules.
         If a member of staff fails any hard custom rule, they are removed from the available list for that duty.
-        The final fair ordering still uses available periods, duty count, heavy-duty count, and recent allocations.
+        If every possible assignment would break a rule, the duty is left blank and recorded for manual review
+        instead of forcing a weak allocation. The final fair ordering still uses available periods, duty count,
+        heavy-duty count, and recent allocations.
     </p>
 </section>
 {% endblock %}

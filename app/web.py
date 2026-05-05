@@ -476,7 +476,11 @@ async def prebuilt_assign(
             if not any(item["initials"] == initials and item["role"] == role for item in possible):
                 skipped += 1
                 continue
-            cleared += assign_staff(conn, target_week, target_day, period, initials, role)
+            result = assign_staff(conn, target_week, target_day, period, initials, role)
+            if result < 0:
+                skipped += 1
+                continue
+            cleared += result
             assigned += 1
     clear_note = f" Cleared {cleared} Period 4 clash(es)." if cleared else ""
     skip_note = f" Skipped {skipped} unavailable/busy session(s)." if skipped else ""
@@ -741,6 +745,9 @@ async def manual_adjustment_assign(
     initials, role = staff_value.split("|", 1)
     with _conn_context() as conn:
         cleared = assign_staff(conn, week, day, period, initials, role)
+    if cleared < 0:
+        _flash(request, "That manual assignment would break an active rule, so the duty was left unchanged.")
+        return RedirectResponse(f"/manual-adjustment?week={week}&day={day}&period={period}", status_code=303)
     note = f" Cleared {cleared} Period 4 clash(es)." if cleared else ""
     _flash(request, f"Manual adjustment saved for {initials}.{note}")
     return RedirectResponse(f"/manual-adjustment?week={week}&day={day}&period={period}", status_code=303)
