@@ -86,6 +86,21 @@ CREATE TABLE IF NOT EXISTS rules (
     last_updated TEXT
 );
 
+CREATE TABLE IF NOT EXISTS custom_rules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    active INTEGER DEFAULT 1,
+    duty_scope TEXT DEFAULT 'Any',
+    staff_scope TEXT DEFAULT 'Any',
+    condition_type TEXT NOT NULL,
+    condition_value TEXT,
+    priority TEXT DEFAULT 'Hard',
+    notes TEXT,
+    is_archived INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    last_updated TEXT
+);
+
 CREATE TABLE IF NOT EXISTS problem_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     timestamp TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -148,6 +163,24 @@ def migrate_database(conn: sqlite3.Connection) -> None:
     _ensure_column(conn, "additional_staff", "days_in_school", "TEXT DEFAULT '1111111111'")
     _ensure_column(conn, "additional_staff", "is_archived", "INTEGER DEFAULT 0")
     _ensure_column(conn, "additional_staff", "status", "TEXT DEFAULT 'Active'")
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS custom_rules (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            active INTEGER DEFAULT 1,
+            duty_scope TEXT DEFAULT 'Any',
+            staff_scope TEXT DEFAULT 'Any',
+            condition_type TEXT NOT NULL,
+            condition_value TEXT,
+            priority TEXT DEFAULT 'Hard',
+            notes TEXT,
+            is_archived INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            last_updated TEXT
+        )
+        """
+    )
 
 
 def _ensure_column(conn: sqlite3.Connection, table_name: str, column_name: str, column_type: str) -> None:

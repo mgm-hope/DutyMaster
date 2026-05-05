@@ -25,5 +25,139 @@
     </tr>
     {% endfor %}
 </table>
-{% endblock %}
 
+<section class="panel">
+    <h3>Custom Rule Builder</h3>
+    <p>
+        Build practical rules with dropdowns. These are enforced when the Pre-Built Duty Events page
+        offers available staff and when Auto-Assign fills empty slots. Warning rules are saved for reference;
+        hard rules actively block unsuitable choices.
+    </p>
+    <form method="post" action="/rules/custom/add" class="stacked-form">
+        <label>
+            Rule name
+            <input type="text" name="name" placeholder="Example: Keep admin off isolation" required>
+        </label>
+        <div class="form-grid">
+            <label>
+                Duty group
+                <select name="duty_scope">
+                    {% for scope in duty_scopes %}
+                    <option value="{{ scope }}">{{ scope }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label>
+                Or one exact duty
+                <select name="duty_specific">
+                    <option value="">Use duty group above</option>
+                    {% for duty in duty_options %}
+                    <option value="{{ duty.value }}">{{ duty.label }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+        </div>
+        <div class="form-grid">
+            <label>
+                Staff group
+                <select name="staff_scope">
+                    {% for scope in staff_scopes %}
+                    <option value="{{ scope }}">{{ scope }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label>
+                Or one named member of staff
+                <select name="staff_specific">
+                    <option value="">Use staff group above</option>
+                    {% for staff in staff_options %}
+                    <option value="{{ staff.value }}">{{ staff.label }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+        </div>
+        <div class="form-grid">
+            <label>
+                Rule type
+                <select name="condition_type">
+                    {% for value, label in condition_types %}
+                    <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label>
+                Number, if needed
+                <input type="number" name="condition_value" min="0" step="0.5" placeholder="Leave blank unless needed">
+            </label>
+            <label>
+                Strength
+                <select name="priority">
+                    <option value="Hard">Hard - enforce it</option>
+                    <option value="Warning">Warning - record only</option>
+                </select>
+            </label>
+        </div>
+        <label>
+            Notes
+            <input type="text" name="notes" placeholder="Reason, return-to-work note, mobility note, or context">
+        </label>
+        <button type="submit">Add Custom Rule</button>
+    </form>
+</section>
+
+<section class="panel">
+    <h3>Saved custom rules</h3>
+    {% if custom_rules %}
+    <table>
+        <tr>
+            <th>Rule</th>
+            <th>Duty</th>
+            <th>Staff</th>
+            <th>Type</th>
+            <th>Value</th>
+            <th>Status</th>
+            <th>Actions</th>
+        </tr>
+        {% for rule in custom_rules %}
+        <tr>
+            <td>
+                <strong>{{ rule["name"] }}</strong>
+                {% if rule["notes"] %}<br><span class="muted">{{ rule["notes"] }}</span>{% endif %}
+            </td>
+            <td>{{ rule["duty_scope"] }}</td>
+            <td>{{ rule["staff_scope"] }}</td>
+            <td>{{ rule["condition_type"].replace("_", " ") }}</td>
+            <td>{{ rule["condition_value"] or "-" }}</td>
+            <td>{{ rule["priority"] }} / {{ "Active" if rule["active"] else "Inactive" }}</td>
+            <td>
+                <form method="post" action="/rules/custom/toggle" class="inline-form">
+                    <input type="hidden" name="rule_id" value="{{ rule['id'] }}">
+                    <input type="hidden" name="active" value="{{ 0 if rule['active'] else 1 }}">
+                    <button type="submit" class="{{ 'secondary' if rule['active'] else '' }}">
+                        {{ "Deactivate" if rule["active"] else "Activate" }}
+                    </button>
+                </form>
+                <form method="post" action="/rules/custom/archive" class="inline-form">
+                    <input type="hidden" name="rule_id" value="{{ rule['id'] }}">
+                    <button type="submit" class="danger">Remove</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
+    {% else %}
+    <div class="empty-state">
+        No custom rules yet. Add one above when you need a local exception or extra protection.
+    </div>
+    {% endif %}
+</section>
+
+<section class="panel">
+    <h3>How custom rules are applied</h3>
+    <p>
+        The allocator first applies the built-in DutyMaster rules, then applies active hard custom rules.
+        If a member of staff fails any hard custom rule, they are removed from the available list for that duty.
+        The final fair ordering still uses available periods, duty count, heavy-duty count, and recent allocations.
+    </p>
+</section>
+{% endblock %}

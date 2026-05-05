@@ -386,6 +386,27 @@ textarea {
     max-width: 560px;
 }
 
+.stacked-form {
+    display: grid;
+    gap: 14px;
+}
+
+.form-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(210px, 1fr));
+    gap: 14px;
+    align-items: end;
+}
+
+.form-grid label,
+.stacked-form label {
+    display: grid;
+    gap: 6px;
+    color: var(--muted);
+    font-size: 14px;
+    font-weight: 800;
+}
+
 .inline-form {
     display: inline-flex;
     gap: 10px;
@@ -405,6 +426,15 @@ textarea {
 
 .muted-row td {
     background: #f7f2fb;
+}
+
+.empty-state {
+    padding: 18px;
+    background: var(--surface-alt);
+    border: 1px dashed var(--line);
+    border-radius: 8px;
+    color: var(--muted);
+    font-weight: 750;
 }
 
 .login-panel {
@@ -439,7 +469,8 @@ textarea {
     }
 
     .metrics,
-    .grid.two {
+    .grid.two,
+    .form-grid {
         grid-template-columns: 1fr;
     }
 

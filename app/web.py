@@ -545,7 +545,60 @@ def rules_page(request: Request):
         return redirect
     with _conn_context() as conn:
         rules = conn.execute("SELECT id, name, description, active FROM rules ORDER BY id").fetchall()
-    return templates.TemplateResponse("rules.html", _base_context(request, "Rules", rules=rules))
+        custom_rules = conn.execute(
+            """
+            SELECT id, name, active, duty_scope, staff_scope, condition_type, condition_value, priority, notes
+            FROM custom_rules
+            WHERE COALESCE(is_archived, 0) = 0
+            ORDER BY active DESC, id DESC
+            """
+        ).fetchall()
+        teacher_staff = conn.execute(
+            """
+            SELECT initials, COALESCE(full_name, initials) AS name, classification AS role
+            FROM teachers
+            ORDER BY initials
+            """
+        ).fetchall()
+        additional_staff = conn.execute(
+            """
+            SELECT initials, full_name AS name, category AS role
+            FROM additional_staff
+            WHERE COALESCE(is_archived, 0) = 0
+            ORDER BY category, initials
+            """
+        ).fetchall()
+    staff_options = [
+        {"value": f"Staff:{row['initials']}", "label": f"{row['initials']} - {row['name']} ({row['role']})"}
+        for row in [*teacher_staff, *additional_staff]
+    ]
+    duty_scopes = [
+        "Any", "Gate Duty", "Tutor Time", "Period 1", "Period 2", "Break", "Period 3",
+        "Period 4 Lunch", "Period 4A", "Period 4B", "Period 4C", "Period 5", "Period 6",
+        "Period 7", "Isolation Duties", "Lunch and Detention", "Heavy Duties",
+    ]
+    duty_options = [{"value": code, "label": f"{section} - {label}"} for section, events in DUTY_SECTIONS for code, label in events]
+    staff_scopes = ["Any", "Teacher", "HOF", "SLT", "Pastoral", "Admin", "ESLT", "Chaplaincy"]
+    condition_types = [
+        ("exclude", "Exclude this staff/group from this duty scope"),
+        ("min_available_periods", "Require at least this many available periods"),
+        ("max_duties_per_week", "Limit this staff/group to this many duties per week"),
+        ("no_heavy_same_day", "Do not give a second heavy duty on the same day"),
+    ]
+    return templates.TemplateResponse(
+        "rules.html",
+        _base_context(
+            request,
+            "Rules",
+            rules=rules,
+            custom_rules=custom_rules,
+            duty_scopes=duty_scopes,
+            duty_options=duty_options,
+            staff_scopes=staff_scopes,
+            staff_options=staff_options,
+            condition_types=condition_types,
+        ),
+    )
 
 
 @app.post("/rules/toggle")
@@ -559,6 +612,75 @@ async def rules_toggle(request: Request, rule_id: int = Form(...), active: int =
             (1 if active else 0, datetime.now().isoformat(), rule_id),
         )
         conn.commit()
+    return RedirectResponse("/rules", status_code=303)
+
+
+@app.post("/rules/custom/add")
+async def custom_rule_add(
+    request: Request,
+    name: str = Form(...),
+    duty_scope: str = Form("Any"),
+    duty_specific: str = Form(""),
+    staff_scope: str = Form("Any"),
+    staff_specific: str = Form(""),
+    condition_type: str = Form(...),
+    condition_value: str = Form(""),
+    priority: str = Form("Hard"),
+    notes: str = Form(""),
+):
+    redirect = _require_login(request)
+    if redirect:
+        return redirect
+    final_duty_scope = duty_specific or duty_scope
+    final_staff_scope = staff_specific or staff_scope
+    with _conn_context() as conn:
+        conn.execute(
+            """
+            INSERT INTO custom_rules(name, duty_scope, staff_scope, condition_type, condition_value, priority, notes, last_updated)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                name.strip() or "Custom rule",
+                final_duty_scope,
+                final_staff_scope,
+                condition_type,
+                condition_value.strip(),
+                priority,
+                notes.strip(),
+                datetime.now().isoformat(),
+            ),
+        )
+        conn.commit()
+    _flash(request, "Custom rule added.")
+    return RedirectResponse("/rules", status_code=303)
+
+
+@app.post("/rules/custom/toggle")
+async def custom_rule_toggle(request: Request, rule_id: int = Form(...), active: int = Form(0)):
+    redirect = _require_login(request)
+    if redirect:
+        return redirect
+    with _conn_context() as conn:
+        conn.execute(
+            "UPDATE custom_rules SET active = ?, last_updated = ? WHERE id = ?",
+            (1 if active else 0, datetime.now().isoformat(), rule_id),
+        )
+        conn.commit()
+    return RedirectResponse("/rules", status_code=303)
+
+
+@app.post("/rules/custom/archive")
+async def custom_rule_archive(request: Request, rule_id: int = Form(...)):
+    redirect = _require_login(request)
+    if redirect:
+        return redirect
+    with _conn_context() as conn:
+        conn.execute(
+            "UPDATE custom_rules SET is_archived = 1, active = 0, last_updated = ? WHERE id = ?",
+            (datetime.now().isoformat(), rule_id),
+        )
+        conn.commit()
+    _flash(request, "Custom rule removed.")
     return RedirectResponse("/rules", status_code=303)
 
 

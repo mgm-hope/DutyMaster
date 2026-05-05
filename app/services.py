@@ -298,6 +298,118 @@ def duty_is_heavy(code: str) -> bool:
     return "Isolation" in code or "Lunch" in code or "Detention" in code
 
 
+def duty_scope_matches(code: str, scope: str) -> bool:
+    scope = scope or "Any"
+    if scope == "Any":
+        return True
+    if scope == code:
+        return True
+    scope_prefixes = {
+        "Gate Duty": ["Gate"],
+        "Tutor Time": ["Tutor_"],
+        "Period 1": ["P1_"],
+        "Period 2": ["P2_"],
+        "Break": ["Break_"],
+        "Period 3": ["P3_"],
+        "Period 4 Lunch": ["P4_Lunch_"],
+        "Period 4A": ["P4A_"],
+        "Period 4B": ["P4B_"],
+        "Period 4C": ["P4C_"],
+        "Period 5": ["P5_"],
+        "Period 6": ["P6_"],
+        "Period 7": ["P7_"],
+        "Isolation Duties": ["Tutor_Isolation", "P1_Isolation", "P2_Isolation", "Break_Isolation", "P3_Isolation", "P4A_Isolation", "P4B_Isolation", "P4C_Isolation", "P5_Isolation", "P6_Isolation", "P7_Isolation"],
+        "Lunch and Detention": ["P4_Lunch_", "Break_Late_Detention", "P7_Detention"],
+        "Heavy Duties": ["Isolation", "Lunch", "Detention"],
+    }
+    prefixes = scope_prefixes.get(scope, [])
+    return any(code.startswith(prefix) or prefix in code for prefix in prefixes)
+
+
+def staff_scope_matches(initials: str, role: str, scope: str) -> bool:
+    scope = scope or "Any"
+    if scope == "Any":
+        return True
+    if scope.startswith("Staff:"):
+        return initials == scope.split(":", 1)[1]
+    return role == scope
+
+
+def staff_week_duty_count(conn: sqlite3.Connection, initials: str, week: int) -> int:
+    row = conn.execute(
+        "SELECT COUNT(*) AS count FROM rota_assignments WHERE staff_initials = ? AND week = ?",
+        (initials, week),
+    ).fetchone()
+    return int(row["count"] or 0)
+
+
+def has_heavy_duty_same_day(conn: sqlite3.Connection, initials: str, week: int, day: str) -> bool:
+    rows = conn.execute(
+        "SELECT period FROM rota_assignments WHERE staff_initials = ? AND week = ? AND day = ?",
+        (initials, week, day),
+    ).fetchall()
+    return any(duty_is_heavy(row["period"]) for row in rows)
+
+
+def teacher_available_periods(conn: sqlite3.Connection, initials: str) -> float:
+    row = conn.execute(
+        """
+        SELECT total_lessons, protected_periods, days_in_school
+        FROM teachers
+        WHERE initials = ?
+        """,
+        (initials,),
+    ).fetchone()
+    if not row:
+        return 999
+    days = (row["days_in_school"] or "1111111111").ljust(10, "1")[:10]
+    max_load = 70 - (6.5 * days.count("0"))
+    current_duties = conn.execute(
+        "SELECT COUNT(*) AS count FROM rota_assignments WHERE staff_initials = ?",
+        (initials,),
+    ).fetchone()["count"]
+    return max_load - float(row["total_lessons"] or 0) - int(row["protected_periods"] or 0) - int(current_duties or 0)
+
+
+def custom_rules_allow(conn: sqlite3.Connection, initials: str, role: str, week: int, day: str, code: str) -> bool:
+    rules = conn.execute(
+        """
+        SELECT duty_scope, staff_scope, condition_type, condition_value, priority
+        FROM custom_rules
+        WHERE active = 1 AND COALESCE(is_archived, 0) = 0
+        """
+    ).fetchall()
+    for rule in rules:
+        if (rule["priority"] or "Hard") != "Hard":
+            continue
+        if not duty_scope_matches(code, rule["duty_scope"]):
+            continue
+        if not staff_scope_matches(initials, role, rule["staff_scope"]):
+            continue
+        condition = rule["condition_type"]
+        value = (rule["condition_value"] or "").strip()
+        if condition == "exclude":
+            return False
+        if condition == "min_available_periods":
+            try:
+                minimum = float(value)
+            except ValueError:
+                minimum = 0
+            if teacher_available_periods(conn, initials) < minimum:
+                return False
+        elif condition == "max_duties_per_week":
+            try:
+                maximum = int(float(value))
+            except ValueError:
+                maximum = 0
+            if staff_week_duty_count(conn, initials, week) >= maximum:
+                return False
+        elif condition == "no_heavy_same_day" and duty_is_heavy(code):
+            if has_heavy_duty_same_day(conn, initials, week, day):
+                return False
+    return True
+
+
 def role_priority_for_duty(code: str) -> list[str]:
     if code == "Gate":
         return ["SLT"]
@@ -325,7 +437,7 @@ def role_priority_for_duty(code: str) -> list[str]:
 def available_staff(conn: sqlite3.Connection, week: int, day: str, code: str) -> list[dict]:
     staff = []
     for row in conn.execute("SELECT initials, full_name, classification FROM teachers ORDER BY initials").fetchall():
-        if teacher_available(conn, row["initials"], week, day, code):
+        if teacher_available(conn, row["initials"], week, day, code) and custom_rules_allow(conn, row["initials"], row["classification"], week, day, code):
             staff.append({"initials": row["initials"], "name": row["full_name"], "role": row["classification"]})
     for row in conn.execute(
         """
@@ -334,7 +446,7 @@ def available_staff(conn: sqlite3.Connection, week: int, day: str, code: str) ->
         ORDER BY category, initials
         """
     ).fetchall():
-        if additional_available(conn, row["initials"], week, day, code):
+        if additional_available(conn, row["initials"], week, day, code) and custom_rules_allow(conn, row["initials"], row["category"], week, day, code):
             staff.append({"initials": row["initials"], "name": row["full_name"], "role": row["category"]})
     return sorted(staff, key=lambda item: (role_priority(item["role"]), item["initials"]))
 
@@ -493,6 +605,8 @@ def auto_assign_empty_slots(conn: sqlite3.Connection) -> dict:
             else:
                 ok = additional_available(conn, cand["initials"], week, day, code)
             if not ok:
+                continue
+            if not custom_rules_allow(conn, cand["initials"], cand["role"], week, day, code):
                 continue
             eligible.append((allowed_roles.index(cand["role"]), -cand["available"], cand["duties"], cand["heavy"], cand["initials"], cand))
         if not eligible:
