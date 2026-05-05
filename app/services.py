@@ -298,6 +298,10 @@ def duty_is_heavy(code: str) -> bool:
     return "Isolation" in code or "Lunch" in code or "Detention" in code
 
 
+def duty_is_optional(code: str) -> bool:
+    return "Room_90" in code
+
+
 def duty_scope_matches(code: str, scope: str) -> bool:
     scope = scope or "Any"
     if scope == "Any":
@@ -563,6 +567,8 @@ def duty_sort_key(slot: sqlite3.Row | tuple[int, str, str]) -> tuple:
         priority = 5
     elif "Isolation" in code:
         priority = 6
+    elif duty_is_optional(code):
+        priority = 99
     return (priority, week, ROTA_DAYS.index(day), DUTY_ORDER.get(code, 999))
 
 
@@ -627,7 +633,8 @@ def auto_assign_empty_slots(conn: sqlite3.Connection) -> dict:
                 continue
             eligible.append((allowed_roles.index(cand["role"]), -cand["available"], cand["duties"], cand["heavy"], cand["initials"], cand))
         if not eligible:
-            issues.append(slot)
+            if not duty_is_optional(code):
+                issues.append(slot)
             continue
         eligible.sort()
         chosen = eligible[0][-1]
