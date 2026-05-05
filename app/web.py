@@ -270,22 +270,35 @@ def teaching_loads(request: Request):
     redirect = _require_login(request)
     if redirect:
         return redirect
-    with _conn_context() as conn:
-        teachers = conn.execute(
-            """
-            SELECT t.initials,
-                   COALESCE(s.full_name, t.full_name, t.initials) AS full_name,
-                   COALESCE(total_lessons, 0) AS total_lessons,
-                   COALESCE(protected_periods, 6) AS protected_periods,
-                   COALESCE(classification, 'Teacher') AS classification,
-                   COALESCE(is_part_time, 0) AS is_part_time,
-                   COALESCE(days_in_school, '1111111111') AS days_in_school
-            FROM teachers t
-            LEFT JOIN staff_names s ON t.initials = s.initials
-            ORDER BY initials
-            """
-        ).fetchall()
-    return templates.TemplateResponse("teaching_loads.html", _base_context(request, "Teaching Loads", teachers=teachers))
+    try:
+        with _conn_context() as conn:
+            teachers = conn.execute(
+                """
+                SELECT t.initials,
+                       COALESCE(s.full_name, t.full_name, t.initials) AS full_name,
+                       COALESCE(t.total_lessons, 0) AS total_lessons,
+                       COALESCE(t.protected_periods, 6) AS protected_periods,
+                       COALESCE(t.classification, 'Teacher') AS classification,
+                       COALESCE(t.is_part_time, 0) AS is_part_time,
+                       COALESCE(t.days_in_school, '1111111111') AS days_in_school
+                FROM teachers t
+                LEFT JOIN staff_names s ON t.initials = s.initials
+                ORDER BY t.initials
+                """
+            ).fetchall()
+        return templates.TemplateResponse("teaching_loads.html", _base_context(request, "Teaching Loads", teachers=teachers))
+    except Exception as exc:
+        return templates.TemplateResponse(
+            "error.html",
+            _base_context(
+                request,
+                "Teaching Loads Error",
+                heading="Teaching Loads could not open",
+                message=str(exc),
+                next_step="Try re-uploading the timetable. If this persists, copy this message from the Railway app.",
+            ),
+            status_code=500,
+        )
 
 
 @app.post("/teaching-loads/update")

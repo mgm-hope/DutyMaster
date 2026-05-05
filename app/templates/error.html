@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel danger">
+    <h2>{{ heading }}</h2>
+    <p>{{ next_step }}</p>
+    <table>
+        <tr><th>Error message</th></tr>
+        <tr><td><code>{{ message }}</code></td></tr>
+    </table>
+    <p><a class="button-link" href="/uploads">Go to Uploads</a></p>
+</section>
+{% endblock %}
+
