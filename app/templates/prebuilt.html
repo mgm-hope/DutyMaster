@@ -73,7 +73,7 @@
         <input type="hidden" name="period" value="{{ selected.period }}">
         <select name="staff_value">
             {% for s in candidates %}
-            <option value="{{ s.initials }}|{{ s.role }}">{{ s.initials }} — {{ s.name }} ({{ s.role }})</option>
+            <option value="{{ s.initials }}|{{ s.role }}">{{ s.initials }} - {{ s.name }} ({{ s.role }}{% if s.subject %}, {{ s.subject }}{% endif %})</option>
             {% endfor %}
         </select>
         <select name="scope">

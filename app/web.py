@@ -30,10 +30,13 @@ from .constants import (
 from .database import DB_PATH, get_connection, initialise_database
 from .services import (
     assign_staff,
+    active_duty_codes,
+    active_duty_sections,
     auto_assign_empty_slots,
     available_staff,
     blank_duty_reason,
     build_master_style_workbook,
+    clear_inactive_teacher_break_slots,
     create_throttled_autosave,
     create_version_snapshot,
     fairness_summary,
@@ -299,7 +302,8 @@ def teaching_loads(request: Request):
                        COALESCE(t.protected_periods, 6) AS protected_periods,
                        COALESCE(t.classification, 'Teacher') AS classification,
                        COALESCE(t.is_part_time, 0) AS is_part_time,
-                       COALESCE(t.days_in_school, '1111111111') AS days_in_school
+                       COALESCE(t.days_in_school, '1111111111') AS days_in_school,
+                       COALESCE(t.subject, '') AS subject
                 FROM teachers t
                 LEFT JOIN staff_names s ON t.initials = s.initials
                 ORDER BY t.initials
@@ -327,6 +331,7 @@ async def update_teacher(
     protected_periods: int = Form(...),
     classification: str = Form(...),
     days_in_school: str = Form(...),
+    subject: str = Form(""),
 ):
     redirect = _require_login(request)
     if redirect:
@@ -341,10 +346,10 @@ async def update_teacher(
             """
             UPDATE teachers
             SET protected_periods = ?, classification = ?, days_in_school = ?,
-                is_part_time = ?, non_contact = ?, last_updated = ?
+                is_part_time = ?, non_contact = ?, subject = ?, last_updated = ?
             WHERE initials = ?
             """,
-            (protected_periods, classification, days, 1 if "0" in days else 0, max(0, max_load - float(total or 0)), datetime.now().isoformat(), initials),
+            (protected_periods, classification, days, 1 if "0" in days else 0, max(0, max_load - float(total or 0)), subject.strip(), datetime.now().isoformat(), initials),
         )
         conn.commit()
     _flash(request, f"Updated {initials}.")
@@ -459,12 +464,13 @@ def prebuilt(request: Request, week: int = 1, day: str = "Mon", period: str | No
         candidates = available_staff(conn, week, day, period) if period else []
         conflicts = get_p4_lunch_conflicts(conn)
         preview = preview_auto_assign(conn) if request.query_params.get("preview") == "1" else None
+        duty_sections = active_duty_sections(conn)
     return templates.TemplateResponse(
         "prebuilt.html",
         _base_context(
             request,
             "Pre-Built Duty Events",
-            duty_sections=DUTY_SECTIONS,
+            duty_sections=duty_sections,
             duty_labels=DUTY_LABELS,
             assignments=assignments,
             selected={"week": week, "day": day, "period": period},
@@ -589,6 +595,7 @@ def rules_page(request: Request):
     with _conn_context() as conn:
         rules = conn.execute("SELECT id, name, description, active FROM rules ORDER BY id").fetchall()
         max_duties = get_setting(conn, "max_duties_per_week", "4")
+        teacher_break_slots = get_setting(conn, "teacher_break_rota_slots", "6")
         exclusions = conn.execute(
             """
             SELECT id, staff_initials, week, day, reason, active, created_at
@@ -626,7 +633,7 @@ def rules_page(request: Request):
     ]
     duty_scopes = [
         "Any", "Gate Duty", "Tutor Time", "Period 1", "Period 2", "Break", "Period 3",
-        "Period 4 Lunch", "Period 4A", "Period 4B", "Period 4C", "Period 5", "Period 6",
+        "Teacher Break Rota", "Period 4 Lunch", "Period 4A", "Period 4B", "Period 4C", "Period 5", "Period 6",
         "Period 7", "Isolation Duties", "Lunch and Detention", "Heavy Duties",
     ]
     duty_options = [{"value": code, "label": f"{section} - {label}"} for section, events in DUTY_SECTIONS for code, label in events]
@@ -644,6 +651,7 @@ def rules_page(request: Request):
             "Rules",
             rules=rules,
             max_duties=max_duties,
+            teacher_break_slots=teacher_break_slots,
             exclusions=exclusions,
             custom_rules=custom_rules,
             duty_scopes=duty_scopes,
@@ -671,11 +679,16 @@ async def rules_toggle(request: Request, rule_id: int = Form(...), active: int =
 
 
 @app.post("/rules/settings")
-async def rules_settings(request: Request, max_duties_per_week: int = Form(...)):
+async def rules_settings(
+    request: Request,
+    max_duties_per_week: int = Form(...),
+    teacher_break_rota_slots: int = Form(6),
+):
     redirect = _require_login(request)
     if redirect:
         return redirect
     value = str(max(0, min(30, max_duties_per_week)))
+    break_slots = str(max(0, min(10, teacher_break_rota_slots)))
     with _conn_context() as conn:
         create_throttled_autosave(conn, "Rules edit autosave")
         conn.execute(
@@ -686,8 +699,18 @@ async def rules_settings(request: Request, max_duties_per_week: int = Form(...))
             """,
             (value, datetime.now().isoformat()),
         )
+        conn.execute(
+            """
+            INSERT INTO app_settings(key, value, last_updated)
+            VALUES ('teacher_break_rota_slots', ?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value, last_updated = excluded.last_updated
+            """,
+            (break_slots, datetime.now().isoformat()),
+        )
+        cleared = clear_inactive_teacher_break_slots(conn)
         conn.commit()
-    _flash(request, f"Maximum duties per week set to {value}.")
+    clear_note = f" Cleared {cleared} inactive teacher break rota assignment(s)." if cleared else ""
+    _flash(request, f"Maximum duties per week set to {value}. Teacher break rota slots set to {break_slots}.{clear_note}")
     return RedirectResponse("/rules", status_code=303)
 
 
@@ -833,12 +856,13 @@ def manual_adjustment(request: Request, week: int = 1, day: str = "Mon", period:
             """
         ).fetchall():
             staff.append({"initials": row["initials"], "name": row["name"], "role": row["role"]})
+        duty_sections = active_duty_sections(conn)
     return templates.TemplateResponse(
         "manual_adjustment.html",
         _base_context(
             request,
             "Manual Adjustment",
-            duty_sections=DUTY_SECTIONS,
+            duty_sections=duty_sections,
             duty_labels=DUTY_LABELS,
             assignments=assignments,
             selected={"week": week, "day": day, "period": period},
@@ -892,6 +916,7 @@ def proposed(request: Request):
     if redirect:
         return redirect
     with _conn_context() as conn:
+        active_codes = active_duty_codes(conn)
         assignments = conn.execute(
             """
             SELECT week, day, period, staff_initials, staff_type FROM rota_assignments
@@ -899,6 +924,7 @@ def proposed(request: Request):
                      CASE day WHEN 'Mon' THEN 1 WHEN 'Tue' THEN 2 WHEN 'Wed' THEN 3 WHEN 'Thu' THEN 4 ELSE 5 END
             """
         ).fetchall()
+        assignments = [row for row in assignments if row["period"] in active_codes]
         review = proposed_review(conn)
         blank_reasons = {f"{row['week']}:{row['day']}:{row['period']}": row["reason"] for row in review["blanks"]}
     return templates.TemplateResponse(

@@ -42,6 +42,18 @@ DUTY_SECTIONS = [
         ("Break_Room_90", "Room 90"),
         ("Break_Isolation", "Isolation"),
     ]),
+    ("Teacher Break Rota", [
+        ("Teacher_Break_Rota_1", "Teacher Break Rota 1"),
+        ("Teacher_Break_Rota_2", "Teacher Break Rota 2"),
+        ("Teacher_Break_Rota_3", "Teacher Break Rota 3"),
+        ("Teacher_Break_Rota_4", "Teacher Break Rota 4"),
+        ("Teacher_Break_Rota_5", "Teacher Break Rota 5"),
+        ("Teacher_Break_Rota_6", "Teacher Break Rota 6"),
+        ("Teacher_Break_Rota_7", "Teacher Break Rota 7"),
+        ("Teacher_Break_Rota_8", "Teacher Break Rota 8"),
+        ("Teacher_Break_Rota_9", "Teacher Break Rota 9"),
+        ("Teacher_Break_Rota_10", "Teacher Break Rota 10"),
+    ]),
     ("Period 3", [
         ("P3_First_Duty", "First Duty"),
         ("P3_Pastoral_Support", "Pastoral Support"),
@@ -98,4 +110,3 @@ DUTY_SECTIONS = [
 
 DUTY_LABELS = {code: label for _, events in DUTY_SECTIONS for code, label in events}
 DUTY_ORDER = {code: index for index, code in enumerate(DUTY_LABELS)}
-

@@ -2,7 +2,7 @@
 {% block content %}
 <h2>Teaching Loads</h2>
 <table>
-    <tr><th>Initials</th><th>Name</th><th>Lessons</th><th>Protected</th><th>Available</th><th>Class</th><th>Days in school</th><th></th></tr>
+    <tr><th>Initials</th><th>Name</th><th>Lessons</th><th>Protected</th><th>Available</th><th>Class</th><th>Subject / Faculty</th><th>Days in school</th><th></th></tr>
     {% for t in teachers %}
     {% set days_pattern = (t["days_in_school"] or "1111111111") %}
     {% set days_out = days_pattern.count("0") %}
@@ -22,6 +22,7 @@
                     {% endfor %}
                 </select>
             </td>
+            <td><input name="subject" value="{{ t['subject'] }}" placeholder="e.g. English"></td>
             <td><input name="days_in_school" value="{{ days_pattern }}" maxlength="10"></td>
             <td><button type="submit">Save</button></td>
         </form>

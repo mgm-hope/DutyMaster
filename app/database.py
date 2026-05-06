@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS teachers (
     classification TEXT DEFAULT 'Teacher',
     is_part_time INTEGER DEFAULT 0,
     days_in_school TEXT DEFAULT '1111111111',
+    subject TEXT DEFAULT '',
     last_updated TEXT
 );
 
@@ -163,6 +164,7 @@ DEFAULT_RULES = [
     ("Lunch Fill Order", "After suitable teachers are used for lunch duty, fill remaining lunch spaces from ESLT, then Chaplaincy, then Admin, and finally SLT."),
     ("Lunch Off-Duty / Rest Protection", "During Period 4 split lunch, Pastoral allocation must preserve the intended rest/off-duty rotation across 4A, 4B, and 4C where possible."),
     ("Room 90 Optional", "Room 90 is the lowest-priority duty. Auto-assign may leave it blank and should not log it as an insufficient-staff problem."),
+    ("Teacher Break Rota", "Add a teacher-only duty between Break and Period 3. Default is 6 staff, adjustable in Rules. Teaching staff can do this at most once per week, with subject grouping preferred."),
 ]
 
 
@@ -186,6 +188,7 @@ def initialise_database(path: Path | None = None) -> sqlite3.Connection:
 
 def migrate_database(conn: sqlite3.Connection) -> None:
     _ensure_column(conn, "teachers", "days_in_school", "TEXT DEFAULT '1111111111'")
+    _ensure_column(conn, "teachers", "subject", "TEXT DEFAULT ''")
     _ensure_column(conn, "additional_staff", "days_in_school", "TEXT DEFAULT '1111111111'")
     _ensure_column(conn, "additional_staff", "is_archived", "INTEGER DEFAULT 0")
     _ensure_column(conn, "additional_staff", "status", "TEXT DEFAULT 'Active'")
@@ -263,4 +266,8 @@ def seed_defaults(conn: sqlite3.Connection) -> None:
     conn.execute(
         "INSERT OR IGNORE INTO app_settings(key, value, last_updated) VALUES (?, ?, CURRENT_TIMESTAMP)",
         ("max_duties_per_week", "4"),
+    )
+    conn.execute(
+        "INSERT OR IGNORE INTO app_settings(key, value, last_updated) VALUES (?, ?, CURRENT_TIMESTAMP)",
+        ("teacher_break_rota_slots", "6"),
     )

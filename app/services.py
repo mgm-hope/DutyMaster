@@ -61,101 +61,6 @@ def parse_timetable(xlsx_path: Path) -> dict:
         "Thursday": "Thu",
         "Friday": "Fri",
     }
-
-
-def table_rows_as_dicts(conn: sqlite3.Connection, table_name: str) -> list[dict]:
-    return [dict(row) for row in conn.execute(f"SELECT * FROM {table_name}").fetchall()]
-
-
-def create_version_snapshot(conn: sqlite3.Connection, name: str, reason: str = "Manual snapshot") -> int:
-    snapshot = {table: table_rows_as_dicts(conn, table) for table in SNAPSHOT_TABLES}
-    cursor = conn.execute(
-        """
-        INSERT INTO versions(name, reason, snapshot_json, created_at)
-        VALUES (?, ?, ?, ?)
-        """,
-        (name.strip() or "DutyMaster snapshot", reason, json.dumps(snapshot), datetime.now().isoformat()),
-    )
-    conn.commit()
-    return int(cursor.lastrowid)
-
-
-def create_throttled_autosave(conn: sqlite3.Connection, reason: str = "Autosave") -> int | None:
-    latest = conn.execute(
-        """
-        SELECT created_at FROM versions
-        WHERE reason = ?
-        ORDER BY id DESC
-        LIMIT 1
-        """,
-        (reason,),
-    ).fetchone()
-    if latest:
-        try:
-            previous = datetime.fromisoformat(latest["created_at"])
-            if (datetime.now() - previous).total_seconds() < 120:
-                return None
-        except ValueError:
-            pass
-    return create_version_snapshot(conn, f"Autosave {datetime.now().strftime('%d %b %H:%M')}", reason)
-
-
-def _insert_rows(conn: sqlite3.Connection, table_name: str, rows: list[dict]) -> None:
-    if not rows:
-        return
-    columns = [row["name"] for row in conn.execute(f"PRAGMA table_info({table_name})").fetchall()]
-    for row in rows:
-        usable = {key: row[key] for key in columns if key in row}
-        if not usable:
-            continue
-        names = list(usable)
-        placeholders = ", ".join("?" for _ in names)
-        conn.execute(
-            f"INSERT OR REPLACE INTO {table_name} ({', '.join(names)}) VALUES ({placeholders})",
-            [usable[name] for name in names],
-        )
-
-
-def _restore_additional_staff(conn: sqlite3.Connection, rows: list[dict]) -> None:
-    columns = [row["name"] for row in conn.execute("PRAGMA table_info(additional_staff)").fetchall()]
-    for row in rows:
-        initials = row.get("initials")
-        if not initials:
-            continue
-        existing = conn.execute("SELECT id FROM additional_staff WHERE initials = ?", (initials,)).fetchone()
-        usable = {key: row[key] for key in columns if key in row and key != "id"}
-        if existing:
-            assignments = ", ".join(f"{key} = ?" for key in usable)
-            conn.execute(
-                f"UPDATE additional_staff SET {assignments} WHERE initials = ?",
-                [*usable.values(), initials],
-            )
-        else:
-            names = list(usable)
-            placeholders = ", ".join("?" for _ in names)
-            conn.execute(
-                f"INSERT INTO additional_staff ({', '.join(names)}) VALUES ({placeholders})",
-                [usable[name] for name in names],
-            )
-
-
-def restore_version_snapshot(conn: sqlite3.Connection, version_id: int) -> str:
-    version = conn.execute("SELECT name, snapshot_json FROM versions WHERE id = ?", (version_id,)).fetchone()
-    if not version:
-        raise ValueError("Version not found")
-    create_version_snapshot(conn, f"Before restore {datetime.now().strftime('%d %b %H:%M')}", "Automatic safety copy before restore")
-    snapshot = json.loads(version["snapshot_json"])
-    for table in SNAPSHOT_TABLES:
-        if table == "additional_staff":
-            continue
-        conn.execute(f"DELETE FROM {table}")
-        _insert_rows(conn, table, snapshot.get(table, []))
-    _restore_additional_staff(conn, snapshot.get("additional_staff", []))
-    from .database import seed_defaults
-    seed_defaults(conn)
-    ensure_duty_event_rows(conn)
-    conn.commit()
-    return version["name"]
     teaching_periods = {"Tutor", "1", "2", "3", "4", "5", "6"}
     all_period_headers = []
     current_day = None
@@ -252,6 +157,7 @@ def restore_version_snapshot(conn: sqlite3.Connection, version_id: int) -> str:
                 "classification": "Teacher",
                 "is_part_time": 1 if "0" in days_in_school else 0,
                 "days_in_school": days_in_school,
+                "subject": "",
             }
         )
 
@@ -262,6 +168,101 @@ def restore_version_snapshot(conn: sqlite3.Connection, version_id: int) -> str:
         "teachers": teachers_data,
         "teacher_periods": teacher_period_rows,
     }
+
+
+def table_rows_as_dicts(conn: sqlite3.Connection, table_name: str) -> list[dict]:
+    return [dict(row) for row in conn.execute(f"SELECT * FROM {table_name}").fetchall()]
+
+
+def create_version_snapshot(conn: sqlite3.Connection, name: str, reason: str = "Manual snapshot") -> int:
+    snapshot = {table: table_rows_as_dicts(conn, table) for table in SNAPSHOT_TABLES}
+    cursor = conn.execute(
+        """
+        INSERT INTO versions(name, reason, snapshot_json, created_at)
+        VALUES (?, ?, ?, ?)
+        """,
+        (name.strip() or "DutyMaster snapshot", reason, json.dumps(snapshot), datetime.now().isoformat()),
+    )
+    conn.commit()
+    return int(cursor.lastrowid)
+
+
+def create_throttled_autosave(conn: sqlite3.Connection, reason: str = "Autosave") -> int | None:
+    latest = conn.execute(
+        """
+        SELECT created_at FROM versions
+        WHERE reason = ?
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (reason,),
+    ).fetchone()
+    if latest:
+        try:
+            previous = datetime.fromisoformat(latest["created_at"])
+            if (datetime.now() - previous).total_seconds() < 120:
+                return None
+        except ValueError:
+            pass
+    return create_version_snapshot(conn, f"Autosave {datetime.now().strftime('%d %b %H:%M')}", reason)
+
+
+def _insert_rows(conn: sqlite3.Connection, table_name: str, rows: list[dict]) -> None:
+    if not rows:
+        return
+    columns = [row["name"] for row in conn.execute(f"PRAGMA table_info({table_name})").fetchall()]
+    for row in rows:
+        usable = {key: row[key] for key in columns if key in row}
+        if not usable:
+            continue
+        names = list(usable)
+        placeholders = ", ".join("?" for _ in names)
+        conn.execute(
+            f"INSERT OR REPLACE INTO {table_name} ({', '.join(names)}) VALUES ({placeholders})",
+            [usable[name] for name in names],
+        )
+
+
+def _restore_additional_staff(conn: sqlite3.Connection, rows: list[dict]) -> None:
+    columns = [row["name"] for row in conn.execute("PRAGMA table_info(additional_staff)").fetchall()]
+    for row in rows:
+        initials = row.get("initials")
+        if not initials:
+            continue
+        existing = conn.execute("SELECT id FROM additional_staff WHERE initials = ?", (initials,)).fetchone()
+        usable = {key: row[key] for key in columns if key in row and key != "id"}
+        if existing:
+            assignments = ", ".join(f"{key} = ?" for key in usable)
+            conn.execute(
+                f"UPDATE additional_staff SET {assignments} WHERE initials = ?",
+                [*usable.values(), initials],
+            )
+        else:
+            names = list(usable)
+            placeholders = ", ".join("?" for _ in names)
+            conn.execute(
+                f"INSERT INTO additional_staff ({', '.join(names)}) VALUES ({placeholders})",
+                [usable[name] for name in names],
+            )
+
+
+def restore_version_snapshot(conn: sqlite3.Connection, version_id: int) -> str:
+    version = conn.execute("SELECT name, snapshot_json FROM versions WHERE id = ?", (version_id,)).fetchone()
+    if not version:
+        raise ValueError("Version not found")
+    create_version_snapshot(conn, f"Before restore {datetime.now().strftime('%d %b %H:%M')}", "Automatic safety copy before restore")
+    snapshot = json.loads(version["snapshot_json"])
+    for table in SNAPSHOT_TABLES:
+        if table == "additional_staff":
+            continue
+        conn.execute(f"DELETE FROM {table}")
+        _insert_rows(conn, table, snapshot.get(table, []))
+    _restore_additional_staff(conn, snapshot.get("additional_staff", []))
+    from .database import seed_defaults
+    seed_defaults(conn)
+    ensure_duty_event_rows(conn)
+    conn.commit()
+    return version["name"]
 
 
 def reset_upload_data(conn: sqlite3.Connection) -> None:
@@ -281,13 +282,13 @@ def save_parsed_timetable(conn: sqlite3.Connection, parsed: dict) -> None:
             """
             INSERT INTO teachers (
                 initials, full_name, is_teaching, lessons_week1, lessons_week2, total_lessons,
-                non_contact, protected_periods, classification, is_part_time, days_in_school, last_updated
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                non_contact, protected_periods, classification, is_part_time, days_in_school, subject, last_updated
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 t["initials"], t["full_name"], t["is_teaching"], t["lessons_week1"], t["lessons_week2"],
                 t["total_lessons"], t["non_contact"], t["protected_periods"], t["classification"],
-                t["is_part_time"], t["days_in_school"], datetime.now().isoformat(),
+                t["is_part_time"], t["days_in_school"], t.get("subject", ""), datetime.now().isoformat(),
             ),
         )
     for row in parsed["teacher_periods"]:
@@ -314,7 +315,25 @@ def ensure_duty_event_rows(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def clear_inactive_teacher_break_slots(conn: sqlite3.Connection) -> int:
+    active_slots = teacher_break_rota_slots(conn)
+    cursor = conn.execute(
+        """
+        UPDATE rota_assignments
+        SET staff_initials = NULL, staff_type = NULL, last_updated = ?
+        WHERE period LIKE 'Teacher_Break_Rota_%'
+          AND CAST(SUBSTR(period, 20) AS INTEGER) > ?
+          AND staff_initials IS NOT NULL
+        """,
+        (datetime.now().isoformat(), active_slots),
+    )
+    conn.commit()
+    return cursor.rowcount
+
+
 def event_to_timetable_period(code: str) -> str | None:
+    if code.startswith("Teacher_Break_Rota_"):
+        return None
     if code.startswith("Tutor_"):
         return "Tutor"
     for number in ["1", "2", "3", "5", "6"]:
@@ -330,6 +349,7 @@ def duty_time_group(code: str) -> str:
         return "Gate"
     for prefix, group in [
         ("Tutor_", "Tutor"), ("P1_", "P1"), ("P2_", "P2"), ("Break_", "Break"),
+        ("Teacher_Break_Rota_", "TeacherBreak"),
         ("P3_", "P3"), ("P4A_", "P4A"), ("P4B_", "P4B"), ("P4C_", "P4C"),
         ("P4_", "P4_Lunch"), ("P5_", "P5"), ("P6_", "P6"), ("P7_", "P7"),
     ]:
@@ -426,6 +446,27 @@ def max_duties_per_week(conn: sqlite3.Connection) -> int:
         return 4
 
 
+def teacher_break_rota_slots(conn: sqlite3.Connection) -> int:
+    try:
+        return max(0, min(10, int(float(get_setting(conn, "teacher_break_rota_slots", "6")))))
+    except ValueError:
+        return 6
+
+
+def active_duty_sections(conn: sqlite3.Connection) -> list[tuple[str, list[tuple[str, str]]]]:
+    active_slots = teacher_break_rota_slots(conn)
+    sections = []
+    for section, events in DUTY_SECTIONS:
+        if section == "Teacher Break Rota":
+            events = [(code, label) for code, label in events if int(code.rsplit("_", 1)[1]) <= active_slots]
+        sections.append((section, events))
+    return sections
+
+
+def active_duty_codes(conn: sqlite3.Connection) -> set[str]:
+    return {code for _, events in active_duty_sections(conn) for code, _ in events}
+
+
 def duty_scope_matches(code: str, scope: str) -> bool:
     scope = scope or "Any"
     if scope == "Any":
@@ -438,6 +479,7 @@ def duty_scope_matches(code: str, scope: str) -> bool:
         "Period 1": ["P1_"],
         "Period 2": ["P2_"],
         "Break": ["Break_"],
+        "Teacher Break Rota": ["Teacher_Break_Rota_"],
         "Period 3": ["P3_"],
         "Period 4 Lunch": ["P4_Lunch_"],
         "Period 4A": ["P4A_"],
@@ -469,6 +511,32 @@ def staff_week_duty_count(conn: sqlite3.Connection, initials: str, week: int) ->
         (initials, week),
     ).fetchone()
     return int(row["count"] or 0)
+
+
+def teacher_break_week_count(conn: sqlite3.Connection, initials: str, week: int) -> int:
+    row = conn.execute(
+        """
+        SELECT COUNT(*) AS count
+        FROM rota_assignments
+        WHERE staff_initials = ? AND week = ? AND period LIKE 'Teacher_Break_Rota_%'
+        """,
+        (initials, week),
+    ).fetchone()
+    return int(row["count"] or 0)
+
+
+def assigned_teacher_break_subjects(conn: sqlite3.Connection, week: int, day: str) -> set[str]:
+    rows = conn.execute(
+        """
+        SELECT COALESCE(t.subject, '') AS subject
+        FROM rota_assignments r
+        JOIN teachers t ON t.initials = r.staff_initials
+        WHERE r.week = ? AND r.day = ? AND r.period LIKE 'Teacher_Break_Rota_%'
+          AND COALESCE(t.subject, '') != ''
+        """,
+        (week, day),
+    ).fetchall()
+    return {row["subject"] for row in rows}
 
 
 def staff_excluded_on_day(conn: sqlite3.Connection, initials: str, week: int, day: str) -> sqlite3.Row | None:
@@ -552,6 +620,8 @@ def custom_rules_allow(conn: sqlite3.Connection, initials: str, role: str, week:
 
 
 def role_priority_for_duty(code: str) -> list[str]:
+    if code.startswith("Teacher_Break_Rota_"):
+        return ["Teacher", "HOF", "SLT"]
     if code == "Gate":
         return ["SLT"]
     if code in {"Tutor_1st_Duty", "Tutor_AOW", "P1_Isolation"}:
@@ -599,6 +669,11 @@ def strict_assignment_allowed(
             return False
     if staff_week_duty_count(conn, initials, week) >= max_duties_per_week(conn):
         return False
+    if code.startswith("Teacher_Break_Rota_"):
+        if source != "teacher":
+            return False
+        if teacher_break_week_count(conn, initials, week) >= 1:
+            return False
     return custom_rules_allow(conn, initials, role, week, day, code)
 
 
@@ -626,6 +701,10 @@ def candidate_rejection_reason(
         return "not active, out of school, or already on a clashing duty"
     if staff_week_duty_count(conn, initials, week) >= max_duties_per_week(conn):
         return f"maximum duties per week reached ({max_duties_per_week(conn)})"
+    if code.startswith("Teacher_Break_Rota_") and source != "teacher":
+        return "teacher break rota is teaching staff only"
+    if code.startswith("Teacher_Break_Rota_") and teacher_break_week_count(conn, initials, week) >= 1:
+        return "teacher already has one teacher break rota duty this week"
     if not custom_rules_allow(conn, initials, role, week, day, code):
         return "blocked by a custom hard rule"
     return None
@@ -634,6 +713,8 @@ def candidate_rejection_reason(
 def blank_duty_reason(conn: sqlite3.Connection, week: int, day: str, code: str) -> str:
     if duty_is_optional(code):
         return "Room 90 optional"
+    if code.startswith("Teacher_Break_Rota_") and int(code.rsplit("_", 1)[1]) > teacher_break_rota_slots(conn):
+        return "Teacher break rota slot not active in settings"
     allowed_roles = role_priority_for_duty(code)
     active_roles = set()
     for row in conn.execute("SELECT initials, classification AS role FROM teachers").fetchall():
@@ -658,9 +739,10 @@ def blank_duty_reason(conn: sqlite3.Connection, week: int, day: str, code: str) 
 
 def available_staff(conn: sqlite3.Connection, week: int, day: str, code: str) -> list[dict]:
     staff = []
-    for row in conn.execute("SELECT initials, full_name, classification FROM teachers ORDER BY initials").fetchall():
+    break_subjects = assigned_teacher_break_subjects(conn, week, day) if code and code.startswith("Teacher_Break_Rota_") else set()
+    for row in conn.execute("SELECT initials, full_name, classification, COALESCE(subject, '') AS subject FROM teachers ORDER BY initials").fetchall():
         if strict_assignment_allowed(conn, row["initials"], row["classification"], week, day, code, "teacher"):
-            staff.append({"initials": row["initials"], "name": row["full_name"], "role": row["classification"]})
+            staff.append({"initials": row["initials"], "name": row["full_name"], "role": row["classification"], "subject": row["subject"] or ""})
     for row in conn.execute(
         """
         SELECT initials, full_name, category FROM additional_staff
@@ -669,8 +751,16 @@ def available_staff(conn: sqlite3.Connection, week: int, day: str, code: str) ->
         """
     ).fetchall():
         if strict_assignment_allowed(conn, row["initials"], row["category"], week, day, code, "additional"):
-            staff.append({"initials": row["initials"], "name": row["full_name"], "role": row["category"]})
-    return sorted(staff, key=lambda item: (role_priority(item["role"]), item["initials"]))
+            staff.append({"initials": row["initials"], "name": row["full_name"], "role": row["category"], "subject": ""})
+    return sorted(
+        staff,
+        key=lambda item: (
+            0 if break_subjects and item.get("subject", "") in break_subjects else 1,
+            item.get("subject", ""),
+            role_priority(item["role"]),
+            item["initials"],
+        ),
+    )
 
 
 def clear_conflicting_p4_assignments(conn: sqlite3.Connection, initials: str, week: int, day: str, code: str) -> int:
@@ -756,12 +846,14 @@ def duty_sort_key(slot: sqlite3.Row | tuple[int, str, str]) -> tuple:
         priority = 2
     elif code == "Break_Duty_Lead":
         priority = 3
-    elif code.startswith("P7_Detention"):
+    elif code.startswith("Teacher_Break_Rota_"):
         priority = 4
-    elif code.startswith("P4_Lunch"):
+    elif code.startswith("P7_Detention"):
         priority = 5
-    elif "Isolation" in code:
+    elif code.startswith("P4_Lunch"):
         priority = 6
+    elif "Isolation" in code:
+        priority = 7
     elif duty_is_optional(code):
         priority = 99
     return (priority, week, ROTA_DAYS.index(day), DUTY_ORDER.get(code, 999))
@@ -774,7 +866,7 @@ def auto_assign_empty_slots(conn: sqlite3.Connection) -> dict:
     candidates = []
     for row in conn.execute(
         """
-        SELECT initials, classification AS role, total_lessons, protected_periods, days_in_school
+        SELECT initials, classification AS role, total_lessons, protected_periods, days_in_school, COALESCE(subject, '') AS subject
         FROM teachers
         """
     ).fetchall():
@@ -791,6 +883,7 @@ def auto_assign_empty_slots(conn: sqlite3.Connection) -> dict:
                 "duties": current_duties,
                 "heavy": heavy_count,
                 "source": "teacher",
+                "subject": row["subject"] or "",
             }
         )
 
@@ -817,16 +910,23 @@ def auto_assign_empty_slots(conn: sqlite3.Connection) -> dict:
     empty_slots = conn.execute(
         "SELECT week, day, period FROM rota_assignments WHERE staff_initials IS NULL"
     ).fetchall()
+    active_codes = active_duty_codes(conn)
     assigned = 0
     issues = []
     for slot in sorted(empty_slots, key=duty_sort_key):
         week, day, code = slot["week"], slot["day"], slot["period"]
+        if code not in active_codes:
+            continue
         allowed_roles = role_priority_for_duty(code)
         eligible = []
+        break_subjects = assigned_teacher_break_subjects(conn, week, day) if code.startswith("Teacher_Break_Rota_") else set()
         for cand in candidates:
             if not strict_assignment_allowed(conn, cand["initials"], cand["role"], week, day, code, cand["source"]):
                 continue
-            eligible.append((allowed_roles.index(cand["role"]), -cand["available"], cand["duties"], cand["heavy"], cand["initials"], cand))
+            subject_score = 0
+            if code.startswith("Teacher_Break_Rota_") and break_subjects:
+                subject_score = 0 if cand.get("subject", "") in break_subjects else 1
+            eligible.append((subject_score, allowed_roles.index(cand["role"]), -cand["available"], cand["duties"], cand["heavy"], cand["initials"], cand))
         if not eligible:
             if not duty_is_optional(code):
                 issues.append(slot)
@@ -869,11 +969,14 @@ def preview_auto_assign(conn: sqlite3.Connection) -> dict:
         for row in memory.execute("SELECT week, day, period, staff_initials FROM rota_assignments").fetchall()
     }
     result = auto_assign_empty_slots(memory)
+    active_codes = active_duty_codes(memory)
     after_rows = memory.execute("SELECT week, day, period, staff_initials, staff_type FROM rota_assignments").fetchall()
     would_assign = []
     blanks = []
     for row in after_rows:
         key = (row["week"], row["day"], row["period"])
+        if row["period"] not in active_codes:
+            continue
         if not before.get(key) and row["staff_initials"]:
             would_assign.append(dict(row))
         elif not row["staff_initials"]:
@@ -959,10 +1062,13 @@ def fairness_summary(workload: list[dict]) -> dict:
 
 def proposed_review(conn: sqlite3.Connection) -> dict:
     ensure_duty_event_rows(conn)
+    active_codes = active_duty_codes(conn)
     blanks = []
     for row in conn.execute(
         "SELECT week, day, period FROM rota_assignments WHERE staff_initials IS NULL ORDER BY week, day, period"
     ).fetchall():
+        if row["period"] not in active_codes:
+            continue
         blanks.append(
             {
                 "week": row["week"],
@@ -1024,7 +1130,11 @@ def build_master_style_workbook(conn: sqlite3.Connection) -> BytesIO:
             del wb["DutyMaster extra duties"]
         extra = wb.create_sheet("DutyMaster extra duties")
         extra.append(["Week", "Day", "Duty", "Staff"])
-        extra_codes = ["Gate", "Tutor_Isolation", "Break_Isolation", "P4A_Rest_Break", "P4B_Rest_Break", "P7_Isolation", "P7_Detention_1", "P7_Detention_2"]
+        extra_codes = [
+            "Gate", "Tutor_Isolation", "Break_Isolation",
+            *[f"Teacher_Break_Rota_{index}" for index in range(1, teacher_break_rota_slots(conn) + 1)],
+            "P4A_Rest_Break", "P4B_Rest_Break", "P7_Isolation", "P7_Detention_1", "P7_Detention_2",
+        ]
         for code in extra_codes:
             for week in ROTA_WEEKS:
                 for day in ROTA_DAYS:
@@ -1052,7 +1162,7 @@ def build_master_style_workbook(conn: sqlite3.Connection) -> BytesIO:
         cell.fill = fills["header"]
         cell.font = Font(color="FFFFFF", bold=True)
         cell.alignment = Alignment(horizontal="center")
-    for section, events in DUTY_SECTIONS:
+    for section, events in active_duty_sections(conn):
         ws.append([section])
         ws.cell(ws.max_row, 1).fill = fills["section"]
         for code, label in events:
