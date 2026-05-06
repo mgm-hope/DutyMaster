@@ -6,6 +6,17 @@
     <p>Rules are active by default. Toggle a rule off only when you need to make a deliberate exception.</p>
 </section>
 
+<section class="panel">
+    <h3>Allocation settings</h3>
+    <form method="post" action="/rules/settings" class="inline-form">
+        <label>
+            Maximum duties per staff member per week
+            <input type="number" name="max_duties_per_week" min="0" max="30" value="{{ max_duties }}">
+        </label>
+        <button type="submit">Save Setting</button>
+    </form>
+</section>
+
 <table>
     <tr><th>Rule</th><th>Description</th><th>Status</th><th>Action</th></tr>
     {% for rule in rules %}
@@ -25,6 +36,54 @@
     </tr>
     {% endfor %}
 </table>
+
+<section class="panel">
+    <h3>One-off staff exclusions</h3>
+    <p>
+        Use this for return-to-work, mobility, trips, meetings, or a single day where someone should not
+        be offered for duties. This does not archive the staff member.
+    </p>
+    <form method="post" action="/rules/exclusions/add" class="inline-form">
+        <select name="staff_value" required>
+            {% for staff in staff_options %}
+            <option value="{{ staff.value }}">{{ staff.label }}</option>
+            {% endfor %}
+        </select>
+        <select name="week">
+            <option value="1">Week 1</option>
+            <option value="2">Week 2</option>
+        </select>
+        <select name="day">
+            {% for day in days %}
+            <option value="{{ day }}">{{ day }}</option>
+            {% endfor %}
+        </select>
+        <input type="text" name="reason" placeholder="Reason">
+        <button type="submit">Add Exclusion</button>
+    </form>
+    {% if exclusions %}
+    <table>
+        <tr><th>Staff</th><th>When</th><th>Reason</th><th>Status</th><th>Action</th></tr>
+        {% for item in exclusions %}
+        <tr>
+            <td>{{ item.staff_initials }}</td>
+            <td>Week {{ item.week }} {{ item.day }}</td>
+            <td>{{ item.reason or "—" }}</td>
+            <td>{{ "Active" if item.active else "Inactive" }}</td>
+            <td>
+                <form method="post" action="/rules/exclusions/toggle" class="inline-form">
+                    <input type="hidden" name="exclusion_id" value="{{ item.id }}">
+                    <input type="hidden" name="active" value="{{ 0 if item.active else 1 }}">
+                    <button type="submit" class="{{ 'secondary' if item.active else '' }}">
+                        {{ "Deactivate" if item.active else "Reactivate" }}
+                    </button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
+    {% endif %}
+</section>
 
 <section class="panel">
     <h3>Custom Rule Builder</h3>

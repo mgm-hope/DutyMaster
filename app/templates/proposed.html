@@ -2,14 +2,63 @@
 {% block content %}
 <h2>Proposed Timetable</h2>
 <p><a class="button-link" href="/proposed/download">Download Proposed Timetable - Master Duty Excel</a></p>
+
+<section class="panel">
+    <h3>Export review</h3>
+    <p><strong>Fairness:</strong> {{ review.fairness.label }}. {{ review.fairness.detail }}</p>
+    <p>Blank duties: {{ review.blanks|length }}. Period 4 conflicts: {{ review.conflicts|length }}.</p>
+    {% if review.conflicts %}
+    <table>
+        <tr><th>Week</th><th>Day</th><th>Staff</th><th>Duties</th></tr>
+        {% for row in review.conflicts %}
+        <tr><td>{{ row.week }}</td><td>{{ row.day }}</td><td>{{ row.staff_initials }}</td><td>{{ row.duties }}</td></tr>
+        {% endfor %}
+    </table>
+    {% endif %}
+    {% if review.blanks %}
+    <table>
+        <tr><th>Week</th><th>Day</th><th>Blank duty</th><th>Reason</th></tr>
+        {% for row in review.blanks[:30] %}
+        <tr><td>{{ row.week }}</td><td>{{ row.day }}</td><td>{{ duty_labels.get(row.period, row.period) }}</td><td>{{ row.reason }}</td></tr>
+        {% endfor %}
+    </table>
+    {% endif %}
+</section>
+
+<section class="panel">
+    <h3>Staff workload summary</h3>
+    <table>
+        <tr><th>Staff</th><th>Role</th><th>Total duties</th><th>Heavy</th><th>Lunch</th><th>Isolation</th><th>Available periods</th></tr>
+        {% for row in review.workload %}
+        <tr>
+            <td><strong>{{ row.initials }}</strong> {{ row.name }}</td>
+            <td>{{ row.role }}</td>
+            <td>{{ row.duties }}</td>
+            <td>{{ row.heavy }}</td>
+            <td>{{ row.lunch }}</td>
+            <td>{{ row.isolation }}</td>
+            <td>{{ "%.1f"|format(row.available_periods) if row.available_periods < 999 else "Additional" }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+</section>
+
 <table>
     <tr><th>Week</th><th>Day</th><th>Duty</th><th>Staff</th><th>Role</th></tr>
     {% for a in assignments %}
+    {% set blank_key = a["week"] ~ ":" ~ a["day"] ~ ":" ~ a["period"] %}
     <tr>
-        <td>{{ a["week"] }}</td><td>{{ a["day"] }}</td><td>{{ duty_labels.get(a["period"], a["period"]) }}</td>
-        <td>{{ a["staff_initials"] or "—" }}</td><td>{{ a["staff_type"] or "—" }}</td>
+        <td>{{ a["week"] }}</td>
+        <td>{{ a["day"] }}</td>
+        <td>{{ duty_labels.get(a["period"], a["period"]) }}</td>
+        <td>
+            {{ a["staff_initials"] or "—" }}
+            {% if not a["staff_initials"] and blank_reasons.get(blank_key) %}
+            <br><span class="muted">{{ blank_reasons.get(blank_key) }}</span>
+            {% endif %}
+        </td>
+        <td>{{ a["staff_type"] or "—" }}</td>
     </tr>
     {% endfor %}
 </table>
 {% endblock %}
-

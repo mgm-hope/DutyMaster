@@ -33,6 +33,8 @@ SNAPSHOT_TABLES = [
     "rota_assignments",
     "rules",
     "custom_rules",
+    "app_settings",
+    "staff_exclusions",
     "problem_log",
 ]
 
@@ -412,6 +414,18 @@ def duty_is_optional(code: str) -> bool:
     return "Room_90" in code
 
 
+def get_setting(conn: sqlite3.Connection, key: str, default: str) -> str:
+    row = conn.execute("SELECT value FROM app_settings WHERE key = ?", (key,)).fetchone()
+    return str(row["value"]) if row else default
+
+
+def max_duties_per_week(conn: sqlite3.Connection) -> int:
+    try:
+        return int(float(get_setting(conn, "max_duties_per_week", "4")))
+    except ValueError:
+        return 4
+
+
 def duty_scope_matches(code: str, scope: str) -> bool:
     scope = scope or "Any"
     if scope == "Any":
@@ -455,6 +469,19 @@ def staff_week_duty_count(conn: sqlite3.Connection, initials: str, week: int) ->
         (initials, week),
     ).fetchone()
     return int(row["count"] or 0)
+
+
+def staff_excluded_on_day(conn: sqlite3.Connection, initials: str, week: int, day: str) -> sqlite3.Row | None:
+    return conn.execute(
+        """
+        SELECT reason
+        FROM staff_exclusions
+        WHERE staff_initials = ? AND week = ? AND day = ? AND active = 1
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (initials, week, day),
+    ).fetchone()
 
 
 def has_heavy_duty_same_day(conn: sqlite3.Connection, initials: str, week: int, day: str) -> bool:
@@ -557,6 +584,8 @@ def strict_assignment_allowed(
     code: str,
     source: str | None = None,
 ) -> bool:
+    if staff_excluded_on_day(conn, initials, week, day):
+        return False
     allowed_roles = role_priority_for_duty(code)
     if role not in allowed_roles:
         return False
@@ -568,7 +597,63 @@ def strict_assignment_allowed(
     else:
         if not additional_available(conn, initials, week, day, code):
             return False
+    if staff_week_duty_count(conn, initials, week) >= max_duties_per_week(conn):
+        return False
     return custom_rules_allow(conn, initials, role, week, day, code)
+
+
+def candidate_rejection_reason(
+    conn: sqlite3.Connection,
+    initials: str,
+    role: str,
+    week: int,
+    day: str,
+    code: str,
+    source: str | None = None,
+) -> str | None:
+    exclusion = staff_excluded_on_day(conn, initials, week, day)
+    if exclusion:
+        return f"excluded that day: {exclusion['reason'] or 'one-off exclusion'}"
+    allowed_roles = role_priority_for_duty(code)
+    if role not in allowed_roles:
+        return f"role {role} is not allowed for this duty"
+    if source is None:
+        source = "teacher" if conn.execute("SELECT 1 FROM teachers WHERE initials = ?", (initials,)).fetchone() else "additional"
+    if source == "teacher":
+        if not teacher_available(conn, initials, week, day, code):
+            return "not available, teaching, out of school, or already on a clashing duty"
+    elif not additional_available(conn, initials, week, day, code):
+        return "not active, out of school, or already on a clashing duty"
+    if staff_week_duty_count(conn, initials, week) >= max_duties_per_week(conn):
+        return f"maximum duties per week reached ({max_duties_per_week(conn)})"
+    if not custom_rules_allow(conn, initials, role, week, day, code):
+        return "blocked by a custom hard rule"
+    return None
+
+
+def blank_duty_reason(conn: sqlite3.Connection, week: int, day: str, code: str) -> str:
+    if duty_is_optional(code):
+        return "Room 90 optional"
+    allowed_roles = role_priority_for_duty(code)
+    active_roles = set()
+    for row in conn.execute("SELECT initials, classification AS role FROM teachers").fetchall():
+        active_roles.add(row["role"])
+        if strict_assignment_allowed(conn, row["initials"], row["role"], week, day, code, "teacher"):
+            return "Blank but eligible staff exist"
+    for row in conn.execute(
+        """
+        SELECT initials, category AS role
+        FROM additional_staff
+        WHERE COALESCE(is_archived, 0) = 0 AND COALESCE(status, 'Active') = 'Active'
+        """
+    ).fetchall():
+        active_roles.add(row["role"])
+        if strict_assignment_allowed(conn, row["initials"], row["role"], week, day, code, "additional"):
+            return "Blank but eligible staff exist"
+    missing_roles = [role for role in allowed_roles if role not in active_roles]
+    if missing_roles:
+        return f"No active staff in required role(s): {', '.join(missing_roles)}"
+    return "No eligible staff without breaking active rules"
 
 
 def available_staff(conn: sqlite3.Connection, week: int, day: str, code: str) -> list[dict]:
@@ -773,6 +858,126 @@ def auto_assign_empty_slots(conn: sqlite3.Connection) -> dict:
     conn.commit()
     post_repaired = repair_p4_lunch_conflicts(conn)
     return {"assigned": assigned, "issues": len(issues), "repaired": pre_repaired + post_repaired}
+
+
+def preview_auto_assign(conn: sqlite3.Connection) -> dict:
+    memory = sqlite3.connect(":memory:")
+    memory.row_factory = sqlite3.Row
+    conn.backup(memory)
+    before = {
+        (row["week"], row["day"], row["period"]): row["staff_initials"]
+        for row in memory.execute("SELECT week, day, period, staff_initials FROM rota_assignments").fetchall()
+    }
+    result = auto_assign_empty_slots(memory)
+    after_rows = memory.execute("SELECT week, day, period, staff_initials, staff_type FROM rota_assignments").fetchall()
+    would_assign = []
+    blanks = []
+    for row in after_rows:
+        key = (row["week"], row["day"], row["period"])
+        if not before.get(key) and row["staff_initials"]:
+            would_assign.append(dict(row))
+        elif not row["staff_initials"]:
+            blanks.append(
+                {
+                    "week": row["week"],
+                    "day": row["day"],
+                    "period": row["period"],
+                    "reason": blank_duty_reason(memory, row["week"], row["day"], row["period"]),
+                }
+            )
+    memory.close()
+    return {"result": result, "would_assign": would_assign, "blanks": blanks}
+
+
+def workload_summary(conn: sqlite3.Connection) -> list[dict]:
+    staff: dict[str, dict] = {}
+    for row in conn.execute(
+        """
+        SELECT initials, COALESCE(full_name, initials) AS name, classification AS role,
+               total_lessons, protected_periods, days_in_school
+        FROM teachers
+        """
+    ).fetchall():
+        days = (row["days_in_school"] or "1111111111").ljust(10, "1")[:10]
+        max_load = 70 - (6.5 * days.count("0"))
+        staff[row["initials"]] = {
+            "initials": row["initials"],
+            "name": row["name"],
+            "role": row["role"],
+            "available_periods": max_load - float(row["total_lessons"] or 0) - int(row["protected_periods"] or 0),
+            "duties": 0,
+            "heavy": 0,
+            "lunch": 0,
+            "isolation": 0,
+        }
+    for row in conn.execute(
+        """
+        SELECT initials, full_name AS name, category AS role
+        FROM additional_staff
+        WHERE COALESCE(is_archived, 0) = 0
+        """
+    ).fetchall():
+        staff[row["initials"]] = {
+            "initials": row["initials"],
+            "name": row["name"],
+            "role": row["role"],
+            "available_periods": 999,
+            "duties": 0,
+            "heavy": 0,
+            "lunch": 0,
+            "isolation": 0,
+        }
+    for row in conn.execute("SELECT staff_initials, period FROM rota_assignments WHERE staff_initials IS NOT NULL").fetchall():
+        item = staff.get(row["staff_initials"])
+        if not item:
+            continue
+        item["duties"] += 1
+        if duty_is_heavy(row["period"]):
+            item["heavy"] += 1
+        if "Lunch" in row["period"]:
+            item["lunch"] += 1
+        if "Isolation" in row["period"]:
+            item["isolation"] += 1
+    rows = list(staff.values())
+    return sorted(rows, key=lambda item: (-item["duties"], -item["heavy"], item["initials"]))
+
+
+def fairness_summary(workload: list[dict]) -> dict:
+    active = [row for row in workload if row["duties"] > 0]
+    if not active:
+        return {"label": "Not built yet", "detail": "No duties have been assigned."}
+    duties = [row["duties"] for row in active]
+    spread = max(duties) - min(duties)
+    if spread <= 2:
+        label = "Good"
+    elif spread <= 5:
+        label = "Needs review"
+    else:
+        label = "Uneven"
+    return {"label": label, "detail": f"Duty spread is {spread} between the least and most-used assigned staff."}
+
+
+def proposed_review(conn: sqlite3.Connection) -> dict:
+    ensure_duty_event_rows(conn)
+    blanks = []
+    for row in conn.execute(
+        "SELECT week, day, period FROM rota_assignments WHERE staff_initials IS NULL ORDER BY week, day, period"
+    ).fetchall():
+        blanks.append(
+            {
+                "week": row["week"],
+                "day": row["day"],
+                "period": row["period"],
+                "reason": blank_duty_reason(conn, row["week"], row["day"], row["period"]),
+            }
+        )
+    workload = workload_summary(conn)
+    return {
+        "blanks": blanks,
+        "conflicts": get_p4_lunch_conflicts(conn),
+        "workload": workload,
+        "fairness": fairness_summary(workload),
+    }
 
 
 def build_master_style_workbook(conn: sqlite3.Connection) -> BytesIO:

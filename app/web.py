@@ -32,16 +32,22 @@ from .services import (
     assign_staff,
     auto_assign_empty_slots,
     available_staff,
+    blank_duty_reason,
     build_master_style_workbook,
     create_throttled_autosave,
     create_version_snapshot,
+    fairness_summary,
+    get_setting,
     ensure_duty_event_rows,
     get_p4_lunch_conflicts,
+    preview_auto_assign,
+    proposed_review,
     parse_timetable,
     reset_upload_data,
     repair_p4_lunch_conflicts,
     restore_version_snapshot,
     save_parsed_timetable,
+    workload_summary,
 )
 
 
@@ -171,6 +177,8 @@ def dashboard(request: Request):
         additional_count = conn.execute("SELECT COUNT(*) AS count FROM additional_staff WHERE COALESCE(is_archived, 0)=0").fetchone()["count"]
         assigned_count = conn.execute("SELECT COUNT(*) AS count FROM rota_assignments WHERE staff_initials IS NOT NULL").fetchone()["count"]
         conflicts = get_p4_lunch_conflicts(conn)
+        workload = workload_summary(conn)[:12]
+        fairness = fairness_summary(workload_summary(conn))
     return templates.TemplateResponse(
         "dashboard.html",
         _base_context(
@@ -181,6 +189,8 @@ def dashboard(request: Request):
             additional_count=additional_count,
             assigned_count=assigned_count,
             conflicts=conflicts,
+            workload=workload,
+            fairness=fairness,
             db_path=str(DB_PATH),
         ),
     )
@@ -448,6 +458,7 @@ def prebuilt(request: Request, week: int = 1, day: str = "Mon", period: str | No
         }
         candidates = available_staff(conn, week, day, period) if period else []
         conflicts = get_p4_lunch_conflicts(conn)
+        preview = preview_auto_assign(conn) if request.query_params.get("preview") == "1" else None
     return templates.TemplateResponse(
         "prebuilt.html",
         _base_context(
@@ -459,6 +470,7 @@ def prebuilt(request: Request, week: int = 1, day: str = "Mon", period: str | No
             selected={"week": week, "day": day, "period": period},
             candidates=candidates,
             conflicts=conflicts,
+            preview=preview,
         ),
     )
 
@@ -561,6 +573,14 @@ async def prebuilt_auto_assign(request: Request):
     return RedirectResponse("/prebuilt", status_code=303)
 
 
+@app.get("/prebuilt/preview", response_class=HTMLResponse)
+def prebuilt_preview(request: Request):
+    redirect = _require_login(request)
+    if redirect:
+        return redirect
+    return RedirectResponse("/prebuilt?preview=1", status_code=303)
+
+
 @app.get("/rules", response_class=HTMLResponse)
 def rules_page(request: Request):
     redirect = _require_login(request)
@@ -568,6 +588,15 @@ def rules_page(request: Request):
         return redirect
     with _conn_context() as conn:
         rules = conn.execute("SELECT id, name, description, active FROM rules ORDER BY id").fetchall()
+        max_duties = get_setting(conn, "max_duties_per_week", "4")
+        exclusions = conn.execute(
+            """
+            SELECT id, staff_initials, week, day, reason, active, created_at
+            FROM staff_exclusions
+            ORDER BY active DESC, id DESC
+            LIMIT 80
+            """
+        ).fetchall()
         custom_rules = conn.execute(
             """
             SELECT id, name, active, duty_scope, staff_scope, condition_type, condition_value, priority, notes
@@ -614,6 +643,8 @@ def rules_page(request: Request):
             request,
             "Rules",
             rules=rules,
+            max_duties=max_duties,
+            exclusions=exclusions,
             custom_rules=custom_rules,
             duty_scopes=duty_scopes,
             duty_options=duty_options,
@@ -634,6 +665,68 @@ async def rules_toggle(request: Request, rule_id: int = Form(...), active: int =
         conn.execute(
             "UPDATE rules SET active = ?, last_updated = ? WHERE id = ?",
             (1 if active else 0, datetime.now().isoformat(), rule_id),
+        )
+        conn.commit()
+    return RedirectResponse("/rules", status_code=303)
+
+
+@app.post("/rules/settings")
+async def rules_settings(request: Request, max_duties_per_week: int = Form(...)):
+    redirect = _require_login(request)
+    if redirect:
+        return redirect
+    value = str(max(0, min(30, max_duties_per_week)))
+    with _conn_context() as conn:
+        create_throttled_autosave(conn, "Rules edit autosave")
+        conn.execute(
+            """
+            INSERT INTO app_settings(key, value, last_updated)
+            VALUES ('max_duties_per_week', ?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value, last_updated = excluded.last_updated
+            """,
+            (value, datetime.now().isoformat()),
+        )
+        conn.commit()
+    _flash(request, f"Maximum duties per week set to {value}.")
+    return RedirectResponse("/rules", status_code=303)
+
+
+@app.post("/rules/exclusions/add")
+async def staff_exclusion_add(
+    request: Request,
+    staff_value: str = Form(...),
+    week: int = Form(...),
+    day: str = Form(...),
+    reason: str = Form(""),
+):
+    redirect = _require_login(request)
+    if redirect:
+        return redirect
+    initials = staff_value.split("|", 1)[0]
+    with _conn_context() as conn:
+        create_throttled_autosave(conn, "Rules edit autosave")
+        conn.execute(
+            """
+            INSERT INTO staff_exclusions(staff_initials, week, day, reason, active, last_updated)
+            VALUES (?, ?, ?, ?, 1, ?)
+            """,
+            (initials, week, day, reason.strip(), datetime.now().isoformat()),
+        )
+        conn.commit()
+    _flash(request, f"Added one-off exclusion for {initials}.")
+    return RedirectResponse("/rules", status_code=303)
+
+
+@app.post("/rules/exclusions/toggle")
+async def staff_exclusion_toggle(request: Request, exclusion_id: int = Form(...), active: int = Form(0)):
+    redirect = _require_login(request)
+    if redirect:
+        return redirect
+    with _conn_context() as conn:
+        create_throttled_autosave(conn, "Rules edit autosave")
+        conn.execute(
+            "UPDATE staff_exclusions SET active = ?, last_updated = ? WHERE id = ?",
+            (1 if active else 0, datetime.now().isoformat(), exclusion_id),
         )
         conn.commit()
     return RedirectResponse("/rules", status_code=303)
@@ -806,7 +899,20 @@ def proposed(request: Request):
                      CASE day WHEN 'Mon' THEN 1 WHEN 'Tue' THEN 2 WHEN 'Wed' THEN 3 WHEN 'Thu' THEN 4 ELSE 5 END
             """
         ).fetchall()
-    return templates.TemplateResponse("proposed.html", _base_context(request, "Proposed Timetable", assignments=assignments, duty_labels=DUTY_LABELS, duty_order=DUTY_ORDER))
+        review = proposed_review(conn)
+        blank_reasons = {f"{row['week']}:{row['day']}:{row['period']}": row["reason"] for row in review["blanks"]}
+    return templates.TemplateResponse(
+        "proposed.html",
+        _base_context(
+            request,
+            "Proposed Timetable",
+            assignments=assignments,
+            duty_labels=DUTY_LABELS,
+            duty_order=DUTY_ORDER,
+            review=review,
+            blank_reasons=blank_reasons,
+        ),
+    )
 
 
 @app.get("/proposed/download")
@@ -842,12 +948,12 @@ def versions(request: Request):
 
 
 @app.post("/versions/create")
-async def versions_create(request: Request, name: str = Form("Manual save")):
+async def versions_create(request: Request, name: str = Form("Manual save"), reason: str = Form("Manual version save")):
     redirect = _require_login(request)
     if redirect:
         return redirect
     with _conn_context() as conn:
-        create_version_snapshot(conn, name, "Manual version save")
+        create_version_snapshot(conn, name, reason.strip() or "Manual version save")
     _flash(request, "Version saved.")
     return RedirectResponse("/versions", status_code=303)
 

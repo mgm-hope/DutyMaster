@@ -109,6 +109,23 @@ CREATE TABLE IF NOT EXISTS versions (
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS app_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    last_updated TEXT
+);
+
+CREATE TABLE IF NOT EXISTS staff_exclusions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    staff_initials TEXT NOT NULL,
+    week INTEGER NOT NULL CHECK(week IN (1,2)),
+    day TEXT NOT NULL,
+    reason TEXT,
+    active INTEGER DEFAULT 1,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    last_updated TEXT
+);
+
 CREATE TABLE IF NOT EXISTS problem_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     timestamp TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -201,6 +218,29 @@ def migrate_database(conn: sqlite3.Connection) -> None:
         )
         """
     )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS app_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            last_updated TEXT
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS staff_exclusions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            staff_initials TEXT NOT NULL,
+            week INTEGER NOT NULL CHECK(week IN (1,2)),
+            day TEXT NOT NULL,
+            reason TEXT,
+            active INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            last_updated TEXT
+        )
+        """
+    )
 
 
 def _ensure_column(conn: sqlite3.Connection, table_name: str, column_name: str, column_type: str) -> None:
@@ -220,3 +260,7 @@ def seed_defaults(conn: sqlite3.Connection) -> None:
     )
     for name, description in DEFAULT_RULES:
         conn.execute("UPDATE rules SET description = COALESCE(NULLIF(description, ''), ?) WHERE name = ?", (description, name))
+    conn.execute(
+        "INSERT OR IGNORE INTO app_settings(key, value, last_updated) VALUES (?, ?, CURRENT_TIMESTAMP)",
+        ("max_duties_per_week", "4"),
+    )

@@ -6,6 +6,9 @@
     <form method="post" action="/prebuilt/auto-assign" class="inline-form">
         <button type="submit">Auto-Assign Empty Slots</button>
     </form>
+    <form method="get" action="/prebuilt/preview" class="inline-form">
+        <button type="submit" class="secondary">Preview Auto-Assign</button>
+    </form>
     <form method="post" action="/prebuilt/clear-all" class="inline-form">
         <input name="confirm" placeholder="Type CLEAR">
         <button type="submit" class="secondary">Clear All Assignments</button>
@@ -16,6 +19,38 @@
     </form>
     {% endif %}
 </section>
+
+{% if preview %}
+<section class="panel">
+    <h3>Auto-Assign Preview</h3>
+    <p>
+        Preview only: no live duties were changed. It would assign {{ preview.would_assign|length }}
+        slot(s), leave {{ preview.blanks|length }} blank, and repair {{ preview.result.repaired }} Period 4 conflict(s).
+    </p>
+    {% if preview.would_assign %}
+    <table>
+        <tr><th>Week</th><th>Day</th><th>Duty</th><th>Would assign</th><th>Role</th></tr>
+        {% for row in preview.would_assign[:40] %}
+        <tr>
+            <td>{{ row.week }}</td><td>{{ row.day }}</td><td>{{ duty_labels.get(row.period, row.period) }}</td>
+            <td>{{ row.staff_initials }}</td><td>{{ row.staff_type }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+    {% endif %}
+    {% if preview.blanks %}
+    <table>
+        <tr><th>Week</th><th>Day</th><th>Duty left blank</th><th>Reason</th></tr>
+        {% for row in preview.blanks[:40] %}
+        <tr>
+            <td>{{ row.week }}</td><td>{{ row.day }}</td><td>{{ duty_labels.get(row.period, row.period) }}</td>
+            <td>{{ row.reason }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+    {% endif %}
+</section>
+{% endif %}
 
 {% if conflicts %}
 <section class="panel danger">

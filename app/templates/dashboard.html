@@ -8,6 +8,28 @@
     <div class="metric"><span>P4 conflicts</span><strong>{{ conflicts|length }}</strong></div>
 </div>
 <section class="panel">
+    <h3>Allocation health</h3>
+    <p><strong>Fairness:</strong> {{ fairness.label }}. {{ fairness.detail }}</p>
+    {% if workload %}
+    <table>
+        <tr><th>Staff</th><th>Role</th><th>Total duties</th><th>Heavy</th><th>Lunch</th><th>Isolation</th><th>Available periods</th></tr>
+        {% for row in workload %}
+        <tr>
+            <td><strong>{{ row.initials }}</strong> {{ row.name }}</td>
+            <td>{{ row.role }}</td>
+            <td>{{ row.duties }}</td>
+            <td>{{ row.heavy }}</td>
+            <td>{{ row.lunch }}</td>
+            <td>{{ row.isolation }}</td>
+            <td>{{ "%.1f"|format(row.available_periods) if row.available_periods < 999 else "Additional" }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+    {% else %}
+    <p class="muted">No workload data yet.</p>
+    {% endif %}
+</section>
+<section class="panel">
     <h3>Current upload</h3>
     {% if meta %}
     <p><strong>{{ meta["school_name"] }}</strong></p>
@@ -30,4 +52,3 @@
 </section>
 {% endif %}
 {% endblock %}
-
