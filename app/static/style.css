@@ -419,6 +419,57 @@ textarea {
     width: 86px;
 }
 
+.day-picker {
+    display: grid;
+    grid-template-columns: auto repeat(5, minmax(42px, auto));
+    gap: 6px;
+    align-items: center;
+    min-width: 320px;
+}
+
+.week-label {
+    color: var(--primary);
+    font-size: 13px;
+    font-weight: 900;
+}
+
+.day-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 34px;
+}
+
+.day-toggle input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.day-toggle span {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 42px;
+    min-height: 34px;
+    background: var(--rose);
+    border: 1px solid #efb8c8;
+    border-radius: 8px;
+    color: var(--danger);
+    font-size: 13px;
+    font-weight: 900;
+}
+
+.day-toggle input:checked + span {
+    background: #ecf8ef;
+    border-color: rgba(38, 107, 61, 0.34);
+    color: var(--success);
+}
+
+.day-toggle input:focus + span {
+    outline: 3px solid rgba(214, 162, 31, 0.28);
+}
+
 .muted,
 .muted-row {
     color: var(--muted);
@@ -478,5 +529,14 @@ textarea {
         display: block;
         overflow-x: auto;
         white-space: nowrap;
+    }
+
+    .day-picker {
+        min-width: 280px;
+        grid-template-columns: auto repeat(5, 38px);
+    }
+
+    .day-toggle span {
+        width: 38px;
     }
 }

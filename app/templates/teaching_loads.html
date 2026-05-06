@@ -23,7 +23,28 @@
                 </select>
             </td>
             <td><input name="subject" value="{{ t['subject'] }}" placeholder="e.g. English"></td>
-            <td><input name="days_in_school" value="{{ days_pattern }}" maxlength="10"></td>
+            <td>
+                <input type="hidden" name="days_in_school" value="{{ days_pattern }}" data-days-output>
+                <div class="day-picker" data-days-picker>
+                    <span class="week-label">W1</span>
+                    {% for d in days %}
+                    {% set idx = loop.index0 %}
+                    <label class="day-toggle">
+                        <input type="checkbox" {% if days_pattern[idx] == "1" %}checked{% endif %}>
+                        <span>{{ d }}</span>
+                    </label>
+                    {% endfor %}
+                    <span class="week-label">W2</span>
+                    {% for d in days %}
+                    {% set idx = loop.index0 + 5 %}
+                    <label class="day-toggle">
+                        <input type="checkbox" {% if days_pattern[idx] == "1" %}checked{% endif %}>
+                        <span>{{ d }}</span>
+                    </label>
+                    {% endfor %}
+                </div>
+                <span class="muted">{{ "Full time" if days_out == 0 else "Part time" }} • max {{ "%.1f"|format(max_load) }}</span>
+            </td>
             <td><button type="submit">Save</button></td>
         </form>
     </tr>

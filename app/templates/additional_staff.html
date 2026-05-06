@@ -22,7 +22,26 @@
         <td>
             <form method="post" action="/additional-staff/availability" class="inline-form">
                 <input type="hidden" name="staff_id" value="{{ s['id'] }}">
-                <input name="days_in_school" value="{{ s['days_in_school'] or '1111111111' }}" maxlength="10">
+                {% set days_pattern = (s['days_in_school'] or '1111111111') %}
+                <input type="hidden" name="days_in_school" value="{{ days_pattern }}" data-days-output>
+                <div class="day-picker" data-days-picker>
+                    <span class="week-label">W1</span>
+                    {% for d in days %}
+                    {% set idx = loop.index0 %}
+                    <label class="day-toggle">
+                        <input type="checkbox" {% if days_pattern[idx] == "1" %}checked{% endif %}>
+                        <span>{{ d }}</span>
+                    </label>
+                    {% endfor %}
+                    <span class="week-label">W2</span>
+                    {% for d in days %}
+                    {% set idx = loop.index0 + 5 %}
+                    <label class="day-toggle">
+                        <input type="checkbox" {% if days_pattern[idx] == "1" %}checked{% endif %}>
+                        <span>{{ d }}</span>
+                    </label>
+                    {% endfor %}
+                </div>
                 <button type="submit">Save days</button>
             </form>
             <span class="muted">{{ "Full time" if s["is_full_time"] else "Part time" }}</span>

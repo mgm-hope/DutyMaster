@@ -43,6 +43,32 @@
     </main>
     {% if is_logged_in %}
     <script>
+        function syncDayPicker(picker) {
+            var form = picker.closest("form");
+            if (!form) return;
+            var output = form.querySelector("[data-days-output]");
+            if (!output) return;
+            var boxes = picker.querySelectorAll("input[type='checkbox']");
+            var value = "";
+            boxes.forEach(function (box) {
+                value += box.checked ? "1" : "0";
+            });
+            output.value = value.padEnd(10, "1").slice(0, 10);
+        }
+
+        document.querySelectorAll("[data-days-picker]").forEach(function (picker) {
+            syncDayPicker(picker);
+            picker.addEventListener("change", function () {
+                syncDayPicker(picker);
+            });
+        });
+
+        document.querySelectorAll("form").forEach(function (form) {
+            form.addEventListener("submit", function () {
+                form.querySelectorAll("[data-days-picker]").forEach(syncDayPicker);
+            });
+        });
+
         window.addEventListener("pagehide", function () {
             if (navigator.sendBeacon) {
                 navigator.sendBeacon("/versions/autosave", new Blob(["autosave"], {type: "text/plain"}));
