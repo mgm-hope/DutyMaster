@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Versions</h2>
+
+<section class="panel">
+    <h3>Save a version now</h3>
+    <p>
+        Versions capture the timetable upload, teaching loads, additional staff, duty assignments,
+        rules, custom rules, and narrative log. The app also creates safety versions on logout,
+        before major changes, and when the proposed timetable is downloaded.
+    </p>
+    <form method="post" action="/versions/create" class="inline-form">
+        <input type="text" name="name" value="Manual save" aria-label="Version name">
+        <button type="submit">Save Version</button>
+    </form>
+</section>
+
+<section class="panel">
+    <h3>Restore behaviour</h3>
+    <p>
+        Restoring a version brings back the previous rota, upload data, teaching loads, rules, and
+        notes. Additional staff are protected: people added later are not deleted by restore. Archive
+        them from Additional Staffing if they should no longer be used.
+    </p>
+</section>
+
+<section class="panel">
+    <h3>Version history</h3>
+    {% if rows %}
+    <table>
+        <tr>
+            <th>Saved</th>
+            <th>Name</th>
+            <th>Reason</th>
+            <th>Action</th>
+        </tr>
+        {% for row in rows %}
+        <tr>
+            <td>{{ row["created_at"] }}</td>
+            <td><strong>{{ row["name"] }}</strong></td>
+            <td>{{ row["reason"] }}</td>
+            <td>
+                <form method="post" action="/versions/restore" class="inline-form" onsubmit="return confirm('Restore this version? A safety copy of the current data will be saved first.');">
+                    <input type="hidden" name="version_id" value="{{ row['id'] }}">
+                    <button type="submit" class="secondary">Restore</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
+    {% else %}
+    <div class="empty-state">No versions yet. Save one now, or download the proposed timetable to create one automatically.</div>
+    {% endif %}
+</section>
+{% endblock %}

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import json
 import sqlite3
 from datetime import datetime
 from io import BytesIO
@@ -20,6 +21,20 @@ from .constants import (
     ROTA_DAYS,
     ROTA_WEEKS,
 )
+
+
+SNAPSHOT_TABLES = [
+    "timetable_meta",
+    "teachers",
+    "teacher_periods",
+    "staff_names",
+    "classifications",
+    "additional_staff",
+    "rota_assignments",
+    "rules",
+    "custom_rules",
+    "problem_log",
+]
 
 
 def parse_timetable(xlsx_path: Path) -> dict:
@@ -44,6 +59,101 @@ def parse_timetable(xlsx_path: Path) -> dict:
         "Thursday": "Thu",
         "Friday": "Fri",
     }
+
+
+def table_rows_as_dicts(conn: sqlite3.Connection, table_name: str) -> list[dict]:
+    return [dict(row) for row in conn.execute(f"SELECT * FROM {table_name}").fetchall()]
+
+
+def create_version_snapshot(conn: sqlite3.Connection, name: str, reason: str = "Manual snapshot") -> int:
+    snapshot = {table: table_rows_as_dicts(conn, table) for table in SNAPSHOT_TABLES}
+    cursor = conn.execute(
+        """
+        INSERT INTO versions(name, reason, snapshot_json, created_at)
+        VALUES (?, ?, ?, ?)
+        """,
+        (name.strip() or "DutyMaster snapshot", reason, json.dumps(snapshot), datetime.now().isoformat()),
+    )
+    conn.commit()
+    return int(cursor.lastrowid)
+
+
+def create_throttled_autosave(conn: sqlite3.Connection, reason: str = "Autosave") -> int | None:
+    latest = conn.execute(
+        """
+        SELECT created_at FROM versions
+        WHERE reason = ?
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (reason,),
+    ).fetchone()
+    if latest:
+        try:
+            previous = datetime.fromisoformat(latest["created_at"])
+            if (datetime.now() - previous).total_seconds() < 120:
+                return None
+        except ValueError:
+            pass
+    return create_version_snapshot(conn, f"Autosave {datetime.now().strftime('%d %b %H:%M')}", reason)
+
+
+def _insert_rows(conn: sqlite3.Connection, table_name: str, rows: list[dict]) -> None:
+    if not rows:
+        return
+    columns = [row["name"] for row in conn.execute(f"PRAGMA table_info({table_name})").fetchall()]
+    for row in rows:
+        usable = {key: row[key] for key in columns if key in row}
+        if not usable:
+            continue
+        names = list(usable)
+        placeholders = ", ".join("?" for _ in names)
+        conn.execute(
+            f"INSERT OR REPLACE INTO {table_name} ({', '.join(names)}) VALUES ({placeholders})",
+            [usable[name] for name in names],
+        )
+
+
+def _restore_additional_staff(conn: sqlite3.Connection, rows: list[dict]) -> None:
+    columns = [row["name"] for row in conn.execute("PRAGMA table_info(additional_staff)").fetchall()]
+    for row in rows:
+        initials = row.get("initials")
+        if not initials:
+            continue
+        existing = conn.execute("SELECT id FROM additional_staff WHERE initials = ?", (initials,)).fetchone()
+        usable = {key: row[key] for key in columns if key in row and key != "id"}
+        if existing:
+            assignments = ", ".join(f"{key} = ?" for key in usable)
+            conn.execute(
+                f"UPDATE additional_staff SET {assignments} WHERE initials = ?",
+                [*usable.values(), initials],
+            )
+        else:
+            names = list(usable)
+            placeholders = ", ".join("?" for _ in names)
+            conn.execute(
+                f"INSERT INTO additional_staff ({', '.join(names)}) VALUES ({placeholders})",
+                [usable[name] for name in names],
+            )
+
+
+def restore_version_snapshot(conn: sqlite3.Connection, version_id: int) -> str:
+    version = conn.execute("SELECT name, snapshot_json FROM versions WHERE id = ?", (version_id,)).fetchone()
+    if not version:
+        raise ValueError("Version not found")
+    create_version_snapshot(conn, f"Before restore {datetime.now().strftime('%d %b %H:%M')}", "Automatic safety copy before restore")
+    snapshot = json.loads(version["snapshot_json"])
+    for table in SNAPSHOT_TABLES:
+        if table == "additional_staff":
+            continue
+        conn.execute(f"DELETE FROM {table}")
+        _insert_rows(conn, table, snapshot.get(table, []))
+    _restore_additional_staff(conn, snapshot.get("additional_staff", []))
+    from .database import seed_defaults
+    seed_defaults(conn)
+    ensure_duty_event_rows(conn)
+    conn.commit()
+    return version["name"]
     teaching_periods = {"Tutor", "1", "2", "3", "4", "5", "6"}
     all_period_headers = []
     current_day = None

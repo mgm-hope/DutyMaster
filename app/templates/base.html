@@ -30,6 +30,7 @@
         <a href="/rules" class="{% if request.url.path.startswith('/rules') %}active-nav{% endif %}">Rules</a>
         <a href="/manual-adjustment" class="{% if request.url.path.startswith('/manual-adjustment') %}active-nav{% endif %}">Manual Adjustment</a>
         <a href="/proposed" class="{% if request.url.path.startswith('/proposed') %}active-nav{% endif %}">Proposed Timetable</a>
+        <a href="/versions" class="{% if request.url.path.startswith('/versions') %}active-nav{% endif %}">Versions</a>
         <a href="/problems" class="{% if request.url.path.startswith('/problems') %}active-nav{% endif %}">Narrative & Problems</a>
     </nav>
     {% endif %}
@@ -40,5 +41,14 @@
         {% endif %}
         {% block content %}{% endblock %}
     </main>
+    {% if is_logged_in %}
+    <script>
+        window.addEventListener("pagehide", function () {
+            if (navigator.sendBeacon) {
+                navigator.sendBeacon("/versions/autosave", new Blob(["autosave"], {type: "text/plain"}));
+            }
+        });
+    </script>
+    {% endif %}
 </body>
 </html>

@@ -33,11 +33,14 @@ from .services import (
     auto_assign_empty_slots,
     available_staff,
     build_master_style_workbook,
+    create_throttled_autosave,
+    create_version_snapshot,
     ensure_duty_event_rows,
     get_p4_lunch_conflicts,
     parse_timetable,
     reset_upload_data,
     repair_p4_lunch_conflicts,
+    restore_version_snapshot,
     save_parsed_timetable,
 )
 
@@ -150,6 +153,9 @@ async def login(request: Request, password: str = Form(...)):
 
 @app.post("/logout")
 def logout(request: Request):
+    if _is_logged_in(request):
+        with _conn_context() as conn:
+            create_version_snapshot(conn, f"Logout save {datetime.now().strftime('%d %b %H:%M')}", "Saved on logout")
     request.session.clear()
     return RedirectResponse("/login", status_code=303)
 
@@ -201,6 +207,7 @@ async def upload_timetable(request: Request, timetable: UploadFile = File(...)):
     target = _save_upload(timetable, "timetable")
     parsed = parse_timetable(target)
     with _conn_context() as conn:
+        create_version_snapshot(conn, f"Before timetable upload {datetime.now().strftime('%d %b %H:%M')}", "Safety copy before timetable upload")
         save_parsed_timetable(conn, parsed)
     _flash(request, f"Uploaded timetable: {len(parsed['teachers'])} teachers parsed. Teaching Loads is ready to review.")
     return RedirectResponse("/teaching-loads", status_code=303)
@@ -227,6 +234,7 @@ async def upload_staff_list(request: Request, staff_list: UploadFile = File(...)
             rows.append(dict(zip(headers, values)))
     count = 0
     with _conn_context() as conn:
+        create_version_snapshot(conn, f"Before staff list upload {datetime.now().strftime('%d %b %H:%M')}", "Safety copy before staff list upload")
         for row in rows:
             initials = str(row.get("Initials") or row.get("initials") or "").strip().upper()
             full_name = str(row.get("Full Name") or row.get("full_name") or row.get("Name") or "").strip()
@@ -260,6 +268,7 @@ def reset_upload(request: Request):
     if redirect:
         return redirect
     with _conn_context() as conn:
+        create_version_snapshot(conn, f"Before upload reset {datetime.now().strftime('%d %b %H:%M')}", "Safety copy before upload reset")
         reset_upload_data(conn)
     _flash(request, "Uploaded timetable data reset. Additional staffing was kept.")
     return RedirectResponse("/uploads", status_code=303)
@@ -314,6 +323,7 @@ async def update_teacher(
         return redirect
     days = "".join("1" if char == "1" else "0" for char in days_in_school)[:10].ljust(10, "1")
     with _conn_context() as conn:
+        create_throttled_autosave(conn, "Teaching load edit autosave")
         total = conn.execute("SELECT total_lessons FROM teachers WHERE initials = ?", (initials,)).fetchone()["total_lessons"]
         days_out = days.count("0")
         max_load = 70 - (6.5 * days_out)
@@ -360,6 +370,7 @@ async def add_additional_staff(
     if redirect:
         return redirect
     with _conn_context() as conn:
+        create_throttled_autosave(conn, "Additional staffing edit autosave")
         try:
             conn.execute(
                 """
@@ -381,6 +392,7 @@ async def update_additional_status(request: Request, staff_id: int = Form(...), 
     if redirect:
         return redirect
     with _conn_context() as conn:
+        create_throttled_autosave(conn, "Additional staffing edit autosave")
         conn.execute("UPDATE additional_staff SET status = ?, last_updated = ? WHERE id = ?", (status, datetime.now().isoformat(), staff_id))
         conn.commit()
     return RedirectResponse("/additional-staff", status_code=303)
@@ -397,6 +409,7 @@ async def update_additional_availability(
         return redirect
     days = "".join("1" if char == "1" else "0" for char in days_in_school)[:10].ljust(10, "1")
     with _conn_context() as conn:
+        create_throttled_autosave(conn, "Additional staffing edit autosave")
         conn.execute(
             """
             UPDATE additional_staff
@@ -416,6 +429,7 @@ async def archive_additional(request: Request, staff_id: int = Form(...), archiv
     if redirect:
         return redirect
     with _conn_context() as conn:
+        create_version_snapshot(conn, f"Before archive change {datetime.now().strftime('%d %b %H:%M')}", "Safety copy before additional staff archive/restore")
         conn.execute("UPDATE additional_staff SET is_archived = ?, last_updated = ? WHERE id = ?", (archive, datetime.now().isoformat(), staff_id))
         conn.commit()
     return RedirectResponse("/additional-staff", status_code=303)
@@ -471,6 +485,7 @@ async def prebuilt_assign(
     skipped = 0
     cleared = 0
     with _conn_context() as conn:
+        create_throttled_autosave(conn, "Pre-built assignment autosave")
         for target_week, target_day in targets:
             possible = available_staff(conn, target_week, target_day, period)
             if not any(item["initials"] == initials and item["role"] == role for item in possible):
@@ -494,6 +509,7 @@ async def prebuilt_clear(request: Request, week: int = Form(...), day: str = For
     if redirect:
         return redirect
     with _conn_context() as conn:
+        create_throttled_autosave(conn, "Pre-built assignment autosave")
         conn.execute(
             "UPDATE rota_assignments SET staff_initials = NULL, staff_type = NULL, last_updated = ? WHERE week = ? AND day = ? AND period = ?",
             (datetime.now().isoformat(), week, day, period),
@@ -511,6 +527,7 @@ async def prebuilt_clear_all(request: Request, confirm: str = Form("")):
         _flash(request, "Type CLEAR to confirm clearing all assignments.")
         return RedirectResponse("/prebuilt", status_code=303)
     with _conn_context() as conn:
+        create_version_snapshot(conn, f"Before clear all {datetime.now().strftime('%d %b %H:%M')}", "Safety copy before clearing all assignments")
         conn.execute("UPDATE rota_assignments SET staff_initials = NULL, staff_type = NULL, last_updated = ?", (datetime.now().isoformat(),))
         conn.commit()
     _flash(request, "All duty assignments cleared.")
@@ -523,6 +540,7 @@ async def prebuilt_repair_p4(request: Request):
     if redirect:
         return redirect
     with _conn_context() as conn:
+        create_version_snapshot(conn, f"Before Period 4 repair {datetime.now().strftime('%d %b %H:%M')}", "Safety copy before Period 4 repair")
         cleared = repair_p4_lunch_conflicts(conn)
     _flash(request, f"Repaired Period 4 lunch conflicts. Cleared {cleared} 4A/4B/4C assignment(s).")
     return RedirectResponse("/prebuilt", status_code=303)
@@ -534,6 +552,7 @@ async def prebuilt_auto_assign(request: Request):
     if redirect:
         return redirect
     with _conn_context() as conn:
+        create_version_snapshot(conn, f"Before auto-assign {datetime.now().strftime('%d %b %H:%M')}", "Safety copy before auto-assign")
         result = auto_assign_empty_slots(conn)
     _flash(
         request,
@@ -611,6 +630,7 @@ async def rules_toggle(request: Request, rule_id: int = Form(...), active: int =
     if redirect:
         return redirect
     with _conn_context() as conn:
+        create_throttled_autosave(conn, "Rules edit autosave")
         conn.execute(
             "UPDATE rules SET active = ?, last_updated = ? WHERE id = ?",
             (1 if active else 0, datetime.now().isoformat(), rule_id),
@@ -638,6 +658,7 @@ async def custom_rule_add(
     final_duty_scope = duty_specific or duty_scope
     final_staff_scope = staff_specific or staff_scope
     with _conn_context() as conn:
+        create_throttled_autosave(conn, "Rules edit autosave")
         conn.execute(
             """
             INSERT INTO custom_rules(name, duty_scope, staff_scope, condition_type, condition_value, priority, notes, last_updated)
@@ -665,6 +686,7 @@ async def custom_rule_toggle(request: Request, rule_id: int = Form(...), active:
     if redirect:
         return redirect
     with _conn_context() as conn:
+        create_throttled_autosave(conn, "Rules edit autosave")
         conn.execute(
             "UPDATE custom_rules SET active = ?, last_updated = ? WHERE id = ?",
             (1 if active else 0, datetime.now().isoformat(), rule_id),
@@ -679,6 +701,7 @@ async def custom_rule_archive(request: Request, rule_id: int = Form(...)):
     if redirect:
         return redirect
     with _conn_context() as conn:
+        create_throttled_autosave(conn, "Rules edit autosave")
         conn.execute(
             "UPDATE custom_rules SET is_archived = 1, active = 0, last_updated = ? WHERE id = ?",
             (datetime.now().isoformat(), rule_id),
@@ -744,6 +767,7 @@ async def manual_adjustment_assign(
         return redirect
     initials, role = staff_value.split("|", 1)
     with _conn_context() as conn:
+        create_throttled_autosave(conn, "Manual adjustment autosave")
         cleared = assign_staff(conn, week, day, period, initials, role)
     if cleared < 0:
         _flash(request, "That manual assignment would break an active rule, so the duty was left unchanged.")
@@ -759,6 +783,7 @@ async def manual_adjustment_clear(request: Request, week: int = Form(...), day: 
     if redirect:
         return redirect
     with _conn_context() as conn:
+        create_throttled_autosave(conn, "Manual adjustment autosave")
         conn.execute(
             "UPDATE rota_assignments SET staff_initials = NULL, staff_type = NULL, last_updated = ? WHERE week = ? AND day = ? AND period = ?",
             (datetime.now().isoformat(), week, day, period),
@@ -790,12 +815,61 @@ def proposed_download(request: Request):
     if redirect:
         return redirect
     with _conn_context() as conn:
+        create_version_snapshot(conn, f"Proposed timetable {datetime.now().strftime('%d %b %H:%M')}", "Saved when proposed timetable was downloaded")
         data = build_master_style_workbook(conn)
     return Response(
         content=data.getvalue(),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": "attachment; filename=Proposed_Timetable_Master_Duty_Format.xlsx"},
     )
+
+
+@app.get("/versions", response_class=HTMLResponse)
+def versions(request: Request):
+    redirect = _require_login(request)
+    if redirect:
+        return redirect
+    with _conn_context() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, name, reason, created_at
+            FROM versions
+            ORDER BY id DESC
+            LIMIT 80
+            """
+        ).fetchall()
+    return templates.TemplateResponse("versions.html", _base_context(request, "Versions", rows=rows))
+
+
+@app.post("/versions/create")
+async def versions_create(request: Request, name: str = Form("Manual save")):
+    redirect = _require_login(request)
+    if redirect:
+        return redirect
+    with _conn_context() as conn:
+        create_version_snapshot(conn, name, "Manual version save")
+    _flash(request, "Version saved.")
+    return RedirectResponse("/versions", status_code=303)
+
+
+@app.post("/versions/restore")
+async def versions_restore(request: Request, version_id: int = Form(...)):
+    redirect = _require_login(request)
+    if redirect:
+        return redirect
+    with _conn_context() as conn:
+        restored_name = restore_version_snapshot(conn, version_id)
+    _flash(request, f"Restored version: {restored_name}. Additional staff added later were kept.")
+    return RedirectResponse("/versions", status_code=303)
+
+
+@app.post("/versions/autosave")
+async def versions_autosave(request: Request):
+    if not _is_logged_in(request):
+        return Response(status_code=204)
+    with _conn_context() as conn:
+        create_throttled_autosave(conn, "Page leave autosave")
+    return Response(status_code=204)
 
 
 @app.get("/problems", response_class=HTMLResponse)
@@ -814,6 +888,7 @@ async def problems_add(request: Request, issue_type: str = Form(...), descriptio
     if redirect:
         return redirect
     with _conn_context() as conn:
+        create_throttled_autosave(conn, "Narrative edit autosave")
         conn.execute(
             "INSERT INTO problem_log(issue_type, description) VALUES (?, ?)",
             (issue_type, description.strip()),

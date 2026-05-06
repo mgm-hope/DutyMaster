@@ -101,6 +101,14 @@ CREATE TABLE IF NOT EXISTS custom_rules (
     last_updated TEXT
 );
 
+CREATE TABLE IF NOT EXISTS versions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    reason TEXT,
+    snapshot_json TEXT NOT NULL,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS problem_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     timestamp TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -179,6 +187,17 @@ def migrate_database(conn: sqlite3.Connection) -> None:
             is_archived INTEGER DEFAULT 0,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             last_updated TEXT
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS versions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            reason TEXT,
+            snapshot_json TEXT NOT NULL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
         """
     )
