@@ -491,6 +491,7 @@ def prebuilt(request: Request, week: int = 1, day: str = "Mon", period: str | No
             if any(code == period for code, _ in events):
                 selected_section = section_name
                 break
+    day_names = {"Mon": "Monday", "Tue": "Tuesday", "Wed": "Wednesday", "Thu": "Thursday", "Fri": "Friday"}
     with _conn_context() as conn:
         ensure_duty_event_rows(conn)
         assignments = {
@@ -509,7 +510,13 @@ def prebuilt(request: Request, week: int = 1, day: str = "Mon", period: str | No
             duty_sections=duty_sections,
             duty_labels=DUTY_LABELS,
             assignments=assignments,
-            selected={"week": week, "day": day, "period": period, "section": selected_section},
+            selected={
+                "week": week,
+                "day": day,
+                "day_name": day_names.get(day, day),
+                "period": period,
+                "section": selected_section,
+            },
             candidates=candidates,
             conflicts=conflicts,
             preview=preview,
