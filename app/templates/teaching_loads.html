@@ -2,7 +2,7 @@
 {% block content %}
 <h2>Teaching Loads</h2>
 <table>
-    <tr><th>Initials</th><th>Name</th><th>Lessons</th><th>Protected</th><th>Available</th><th>Class</th><th>Subject / Faculty</th><th>Max lunch duties</th><th>Days in school</th><th></th></tr>
+    <tr><th>Initials</th><th>Name</th><th>Lessons</th><th>Protected</th><th>Available</th><th>Class</th><th>Subject / Faculty</th><th>Max lunch duties</th><th>Exclude</th><th>Days in school</th><th></th></tr>
     {% for t in teachers %}
     {% set days_pattern = (t["days_in_school"] or "1111111111") %}
     {% set days_out = days_pattern.count("0") %}
@@ -28,6 +28,12 @@
         </td>
         <td><input form="{{ form_id }}" name="subject" value="{{ t['subject'] }}" placeholder="e.g. English"></td>
         <td><input form="{{ form_id }}" class="small" type="number" min="0" name="max_lunch_duties" value="{{ t['max_lunch_duties'] if t['max_lunch_duties'] is not none else '' }}" placeholder="∞"></td>
+        <td>
+            <label class="check-line">
+                <input form="{{ form_id }}" type="checkbox" name="exclude_from_algorithm" value="1" {% if t["exclude_from_algorithm"] %}checked{% endif %}>
+                <span>Exclude</span>
+            </label>
+        </td>
         <td>
             <input form="{{ form_id }}" type="hidden" name="days_in_school" value="{{ days_pattern }}" data-days-output>
             <div class="day-picker" data-days-picker data-form-id="{{ form_id }}">

@@ -166,6 +166,7 @@ def parse_timetable(xlsx_path: Path) -> dict:
                 "days_in_school": days_in_school,
                 "subject": detected_subject,
                 "max_lunch_duties": None,
+                "exclude_from_algorithm": 0,
             }
         )
 
@@ -305,13 +306,15 @@ def save_parsed_timetable(conn: sqlite3.Connection, parsed: dict) -> None:
             """
             INSERT INTO teachers (
                 initials, full_name, is_teaching, lessons_week1, lessons_week2, total_lessons,
-                non_contact, protected_periods, classification, is_part_time, days_in_school, subject, max_lunch_duties, last_updated
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                non_contact, protected_periods, classification, is_part_time, days_in_school, subject,
+                max_lunch_duties, exclude_from_algorithm, last_updated
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 t["initials"], t["full_name"], t["is_teaching"], t["lessons_week1"], t["lessons_week2"],
                 t["total_lessons"], t["non_contact"], t["protected_periods"], t["classification"],
-                t["is_part_time"], t["days_in_school"], t.get("subject", ""), t.get("max_lunch_duties"), datetime.now().isoformat(),
+                t["is_part_time"], t["days_in_school"], t.get("subject", ""), t.get("max_lunch_duties"),
+                t.get("exclude_from_algorithm", 0), datetime.now().isoformat(),
             ),
         )
     for row in parsed["teacher_periods"]:
@@ -405,8 +408,13 @@ def same_time_assignment_exists(conn: sqlite3.Connection, initials: str, week: i
 
 
 def teacher_available(conn: sqlite3.Connection, initials: str, week: int, day: str, code: str) -> bool:
-    row = conn.execute("SELECT days_in_school FROM teachers WHERE initials = ?", (initials,)).fetchone()
+    row = conn.execute(
+        "SELECT days_in_school, COALESCE(exclude_from_algorithm, 0) AS exclude_from_algorithm FROM teachers WHERE initials = ?",
+        (initials,),
+    ).fetchone()
     if not row:
+        return False
+    if row["exclude_from_algorithm"]:
         return False
     days = (row["days_in_school"] or "1111111111").ljust(10, "1")[:10]
     idx = (week - 1) * 5 + ROTA_DAYS.index(day)
@@ -850,6 +858,12 @@ def candidate_rejection_reason(
     if source is None:
         source = "teacher" if conn.execute("SELECT 1 FROM teachers WHERE initials = ?", (initials,)).fetchone() else "additional"
     if source == "teacher":
+        excluded = conn.execute(
+            "SELECT COALESCE(exclude_from_algorithm, 0) AS exclude_from_algorithm FROM teachers WHERE initials = ?",
+            (initials,),
+        ).fetchone()
+        if excluded and excluded["exclude_from_algorithm"]:
+            return "excluded from algorithm"
         if not teacher_available(conn, initials, week, day, code):
             return "not available, teaching, out of school, or already on a clashing duty"
         if duty_is_lunch(code) and teacher_lunch_limit_reached(conn, initials):

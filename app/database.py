@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS teachers (
     days_in_school TEXT DEFAULT '1111111111',
     subject TEXT DEFAULT '',
     max_lunch_duties INTEGER,
+    exclude_from_algorithm INTEGER DEFAULT 0,
     last_updated TEXT
 );
 
@@ -193,6 +194,7 @@ def migrate_database(conn: sqlite3.Connection) -> None:
     _ensure_column(conn, "teachers", "days_in_school", "TEXT DEFAULT '1111111111'")
     _ensure_column(conn, "teachers", "subject", "TEXT DEFAULT ''")
     _ensure_column(conn, "teachers", "max_lunch_duties", "INTEGER")
+    _ensure_column(conn, "teachers", "exclude_from_algorithm", "INTEGER DEFAULT 0")
     _ensure_column(conn, "additional_staff", "days_in_school", "TEXT DEFAULT '1111111111'")
     _ensure_column(conn, "additional_staff", "is_archived", "INTEGER DEFAULT 0")
     _ensure_column(conn, "additional_staff", "status", "TEXT DEFAULT 'Active'")

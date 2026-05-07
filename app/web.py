@@ -304,7 +304,8 @@ def teaching_loads(request: Request):
                        COALESCE(t.is_part_time, 0) AS is_part_time,
                        COALESCE(t.days_in_school, '1111111111') AS days_in_school,
                        COALESCE(t.subject, '') AS subject,
-                       t.max_lunch_duties
+                       t.max_lunch_duties,
+                       COALESCE(t.exclude_from_algorithm, 0) AS exclude_from_algorithm
                 FROM teachers t
                 LEFT JOIN staff_names s ON t.initials = s.initials
                 ORDER BY t.initials
@@ -334,6 +335,7 @@ async def update_teacher(
     days_in_school: str = Form(...),
     subject: str = Form(""),
     max_lunch_duties: str = Form(""),
+    exclude_from_algorithm: int = Form(0),
 ):
     redirect = _require_login(request)
     if redirect:
@@ -349,10 +351,22 @@ async def update_teacher(
             """
             UPDATE teachers
             SET protected_periods = ?, classification = ?, days_in_school = ?,
-                is_part_time = ?, non_contact = ?, subject = ?, max_lunch_duties = ?, last_updated = ?
+                is_part_time = ?, non_contact = ?, subject = ?, max_lunch_duties = ?,
+                exclude_from_algorithm = ?, last_updated = ?
             WHERE initials = ?
             """,
-            (protected_periods, classification, days, 1 if "0" in days else 0, max(0, max_load - float(total or 0)), subject.strip(), lunch_limit, datetime.now().isoformat(), initials),
+            (
+                protected_periods,
+                classification,
+                days,
+                1 if "0" in days else 0,
+                max(0, max_load - float(total or 0)),
+                subject.strip(),
+                lunch_limit,
+                1 if exclude_from_algorithm else 0,
+                datetime.now().isoformat(),
+                initials,
+            ),
         )
         conn.commit()
     _flash(request, f"Updated {initials}.")
