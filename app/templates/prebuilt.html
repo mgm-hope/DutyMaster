@@ -78,8 +78,11 @@
 
 {% if selected.period %}
 <section class="panel" id="assign-panel">
-    <h3>Assign: Week {{ selected.week }} {{ selected.day }} - {{ duty_labels[selected.period] }}</h3>
-    <p class="muted">Selected duty: {{ selected.period }}. Available staff update from this exact week, day, and duty.</p>
+    <h3>Assign: Week {{ selected.week }} {{ selected.day }} - {{ selected.section }} - {{ duty_labels[selected.period] }}</h3>
+    <p class="selected-duty-note">
+        Selected: <strong>{{ selected.section }} - {{ duty_labels[selected.period] }}</strong>
+        <span>{{ selected.period }}</span>
+    </p>
     <form method="post" action="/prebuilt/assign" class="inline-form">
         <input type="hidden" name="week" value="{{ selected.week }}">
         <input type="hidden" name="day" value="{{ selected.day }}">

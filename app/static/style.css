@@ -480,6 +480,25 @@ textarea {
     color: var(--primary);
 }
 
+.selected-duty-note {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    margin: 0 0 14px;
+    border-radius: 10px;
+    background: var(--gold-soft);
+    color: var(--primary);
+    border: 1px solid rgba(214, 162, 31, 0.45);
+    font-weight: 700;
+}
+
+.selected-duty-note span {
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 800;
+}
+
 .muted,
 .muted-row {
     color: var(--muted);
