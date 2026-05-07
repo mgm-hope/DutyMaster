@@ -686,7 +686,7 @@ def rules_page(request: Request):
     ]
     duty_scopes = [
         "Any", "Gate Duty", "Tutor Time", "Period 1", "Period 2", "Break", "Period 3",
-        "Teacher Break Rota", "Period 4 Lunch", "Period 4A", "Period 4B", "Period 4C", "Period 5", "Period 6",
+        "Teaching Staff Break Rota", "Period 4 Lunch", "Period 4A", "Period 4B", "Period 4C", "Period 5", "Period 6",
         "Period 7", "Isolation Duties", "Lunch and Detention", "Heavy Duties",
     ]
     duty_options = [{"value": code, "label": f"{section} - {label}"} for section, events in DUTY_SECTIONS for code, label in events]
@@ -774,7 +774,7 @@ async def rules_settings(
         cleared = clear_inactive_teacher_break_slots(conn)
         conn.commit()
     clear_note = f" Cleared {cleared} inactive teacher break rota assignment(s)." if cleared else ""
-    _flash(request, f"Maximum duties set to {value} per week and {day_value} per day. Teacher break rota slots set to {break_slots}.{clear_note}")
+    _flash(request, f"Maximum duties set to {value} per week and {day_value} per day. Teaching staff break rota slots set to {break_slots}.{clear_note}")
     return RedirectResponse("/rules", status_code=303)
 
 

@@ -499,7 +499,7 @@ def active_duty_sections(conn: sqlite3.Connection) -> list[tuple[str, list[tuple
     active_slots = teacher_break_rota_slots(conn)
     sections = []
     for section, events in DUTY_SECTIONS:
-        if section == "Teacher Break Rota":
+        if section == "Teaching Staff Break Rota":
             events = [(code, label) for code, label in events if int(code.rsplit("_", 1)[1]) <= active_slots]
         sections.append((section, events))
     return sections
@@ -522,6 +522,7 @@ def duty_scope_matches(code: str, scope: str) -> bool:
         "Period 2": ["P2_"],
         "Break": ["Break_"],
         "Teacher Break Rota": ["Teacher_Break_Rota_"],
+        "Teaching Staff Break Rota": ["Teacher_Break_Rota_"],
         "Period 3": ["P3_"],
         "Period 4 Lunch": ["P4_Lunch_"],
         "Period 4A": ["P4A_"],
@@ -881,9 +882,9 @@ def candidate_rejection_reason(
         if staff_day_duty_count(conn, initials, week, day) >= max_duties_per_day(conn):
             return f"maximum duties per day reached ({max_duties_per_day(conn)})"
     if code.startswith("Teacher_Break_Rota_") and source != "teacher":
-        return "teacher break rota is teaching staff only"
+        return "teaching staff break rota is teaching staff only"
     if code.startswith("Teacher_Break_Rota_") and teacher_break_week_count(conn, initials, week) >= 1:
-        return "teacher already has one teacher break rota duty this week"
+        return "teacher already has one teaching staff break rota duty this week"
     if not custom_rules_allow(conn, initials, role, week, day, code):
         return "blocked by a custom hard rule"
     return None
@@ -893,7 +894,7 @@ def blank_duty_reason(conn: sqlite3.Connection, week: int, day: str, code: str) 
     if duty_is_optional(code):
         return "Room 90 optional"
     if code.startswith("Teacher_Break_Rota_") and int(code.rsplit("_", 1)[1]) > teacher_break_rota_slots(conn):
-        return "Teacher break rota slot not active in settings"
+        return "Teaching staff break rota slot not active in settings"
     allowed_roles = role_priority_for_duty(code)
     active_roles = set()
     for row in conn.execute("SELECT initials, classification AS role FROM teachers").fetchall():
