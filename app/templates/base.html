@@ -45,8 +45,16 @@
     <script>
         function syncDayPicker(picker) {
             var form = picker.closest("form");
-            if (!form) return;
-            var output = form.querySelector("[data-days-output]");
+            var output = null;
+            if (form) {
+                output = form.querySelector("[data-days-output]");
+            }
+            if (!output && picker.dataset.formId) {
+                output = document.querySelector("[data-days-output][form='" + picker.dataset.formId + "']");
+            }
+            if (!output) {
+                output = picker.parentElement ? picker.parentElement.querySelector("[data-days-output]") : null;
+            }
             if (!output) return;
             var boxes = picker.querySelectorAll("input[type='checkbox']");
             var value = "";
