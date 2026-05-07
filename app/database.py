@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS teachers (
     is_part_time INTEGER DEFAULT 0,
     days_in_school TEXT DEFAULT '1111111111',
     subject TEXT DEFAULT '',
+    max_lunch_duties INTEGER,
     last_updated TEXT
 );
 
@@ -65,6 +66,8 @@ CREATE TABLE IF NOT EXISTS additional_staff (
     availability TEXT,
     is_archived INTEGER DEFAULT 0,
     status TEXT DEFAULT 'Active',
+    min_duties INTEGER DEFAULT 0,
+    max_duties INTEGER,
     last_updated TEXT
 );
 
@@ -189,9 +192,12 @@ def initialise_database(path: Path | None = None) -> sqlite3.Connection:
 def migrate_database(conn: sqlite3.Connection) -> None:
     _ensure_column(conn, "teachers", "days_in_school", "TEXT DEFAULT '1111111111'")
     _ensure_column(conn, "teachers", "subject", "TEXT DEFAULT ''")
+    _ensure_column(conn, "teachers", "max_lunch_duties", "INTEGER")
     _ensure_column(conn, "additional_staff", "days_in_school", "TEXT DEFAULT '1111111111'")
     _ensure_column(conn, "additional_staff", "is_archived", "INTEGER DEFAULT 0")
     _ensure_column(conn, "additional_staff", "status", "TEXT DEFAULT 'Active'")
+    _ensure_column(conn, "additional_staff", "min_duties", "INTEGER DEFAULT 0")
+    _ensure_column(conn, "additional_staff", "max_duties", "INTEGER")
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS custom_rules (
@@ -266,6 +272,10 @@ def seed_defaults(conn: sqlite3.Connection) -> None:
     conn.execute(
         "INSERT OR IGNORE INTO app_settings(key, value, last_updated) VALUES (?, ?, CURRENT_TIMESTAMP)",
         ("max_duties_per_week", "4"),
+    )
+    conn.execute(
+        "INSERT OR IGNORE INTO app_settings(key, value, last_updated) VALUES (?, ?, CURRENT_TIMESTAMP)",
+        ("max_duties_per_day", "2"),
     )
     conn.execute(
         "INSERT OR IGNORE INTO app_settings(key, value, last_updated) VALUES (?, ?, CURRENT_TIMESTAMP)",

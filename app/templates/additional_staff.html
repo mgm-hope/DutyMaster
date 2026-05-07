@@ -15,7 +15,7 @@
     </form>
 </section>
 <table>
-    <tr><th>Initials</th><th>Name</th><th>Category</th><th>Days in school</th><th>Status</th><th>Archived</th><th>Actions</th></tr>
+    <tr><th>Initials</th><th>Name</th><th>Category</th><th>Availability and duty limits</th><th>Status</th><th>Archived</th><th>Actions</th></tr>
     {% for s in staff %}
     <tr class="{% if s['is_archived'] %}muted-row{% endif %}">
         <td>{{ s["initials"] }}</td><td>{{ s["full_name"] }}</td><td>{{ s["category"] }}</td>
@@ -42,6 +42,14 @@
                     </label>
                     {% endfor %}
                 </div>
+                <label>
+                    Min duties
+                    <input class="small" type="number" min="0" name="min_duties" value="{{ s['min_duties'] }}">
+                </label>
+                <label>
+                    Max duties
+                    <input class="small" type="number" min="0" name="max_duties" value="{{ s['max_duties'] if s['max_duties'] is not none else '' }}" placeholder="∞">
+                </label>
                 <button type="submit">Save days</button>
             </form>
             <span class="muted">{{ "Full time" if s["is_full_time"] else "Part time" }}</span>

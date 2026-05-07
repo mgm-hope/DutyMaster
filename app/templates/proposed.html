@@ -23,12 +23,27 @@
         {% endfor %}
     </table>
     {% endif %}
+    {% if review.lunch_additional %}
+    <h3>Additional staff used at lunch</h3>
+    <table>
+        <tr><th>Week</th><th>Day</th><th>Lunch duty</th><th>Staff</th><th>Reason</th></tr>
+        {% for row in review.lunch_additional %}
+        <tr>
+            <td>{{ row.week }}</td>
+            <td>{{ row.day }}</td>
+            <td>{{ duty_labels.get(row.period, row.period) }}</td>
+            <td>{{ row.staff_initials }} ({{ row.staff_type }})</td>
+            <td>Used by lunch priority/substitution order to protect teaching staff or fill constrained lunch cover.</td>
+        </tr>
+        {% endfor %}
+    </table>
+    {% endif %}
 </section>
 
 <section class="panel">
     <h3>Staff workload summary</h3>
     <table>
-        <tr><th>Staff</th><th>Role</th><th>Total duties</th><th>Heavy</th><th>Lunch</th><th>Isolation</th><th>Available periods</th></tr>
+        <tr><th>Staff</th><th>Role</th><th>Total duties</th><th>Heavy</th><th>Lunch</th><th>Isolation</th><th>Available periods</th><th>Flag</th></tr>
         {% for row in review.workload %}
         <tr>
             <td><strong>{{ row.initials }}</strong> {{ row.name }}</td>
@@ -38,6 +53,7 @@
             <td>{{ row.lunch }}</td>
             <td>{{ row.isolation }}</td>
             <td>{{ "%.1f"|format(row.available_periods) if row.available_periods < 999 else "Additional" }}</td>
+            <td>{{ row.outlier or "" }}</td>
         </tr>
         {% endfor %}
     </table>

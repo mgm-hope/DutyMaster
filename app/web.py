@@ -303,7 +303,8 @@ def teaching_loads(request: Request):
                        COALESCE(t.classification, 'Teacher') AS classification,
                        COALESCE(t.is_part_time, 0) AS is_part_time,
                        COALESCE(t.days_in_school, '1111111111') AS days_in_school,
-                       COALESCE(t.subject, '') AS subject
+                       COALESCE(t.subject, '') AS subject,
+                       t.max_lunch_duties
                 FROM teachers t
                 LEFT JOIN staff_names s ON t.initials = s.initials
                 ORDER BY t.initials
@@ -332,6 +333,7 @@ async def update_teacher(
     classification: str = Form(...),
     days_in_school: str = Form(...),
     subject: str = Form(""),
+    max_lunch_duties: str = Form(""),
 ):
     redirect = _require_login(request)
     if redirect:
@@ -342,14 +344,15 @@ async def update_teacher(
         total = conn.execute("SELECT total_lessons FROM teachers WHERE initials = ?", (initials,)).fetchone()["total_lessons"]
         days_out = days.count("0")
         max_load = 70 - (6.5 * days_out)
+        lunch_limit = int(max_lunch_duties) if str(max_lunch_duties).strip() else None
         conn.execute(
             """
             UPDATE teachers
             SET protected_periods = ?, classification = ?, days_in_school = ?,
-                is_part_time = ?, non_contact = ?, subject = ?, last_updated = ?
+                is_part_time = ?, non_contact = ?, subject = ?, max_lunch_duties = ?, last_updated = ?
             WHERE initials = ?
             """,
-            (protected_periods, classification, days, 1 if "0" in days else 0, max(0, max_load - float(total or 0)), subject.strip(), datetime.now().isoformat(), initials),
+            (protected_periods, classification, days, 1 if "0" in days else 0, max(0, max_load - float(total or 0)), subject.strip(), lunch_limit, datetime.now().isoformat(), initials),
         )
         conn.commit()
     _flash(request, f"Updated {initials}.")
@@ -366,7 +369,9 @@ def additional_staff(request: Request):
             """
             SELECT id, category, initials, full_name, is_full_time,
                    COALESCE(days_in_school, '1111111111') AS days_in_school,
-                   is_archived, COALESCE(status, 'Active') AS status
+                   is_archived, COALESCE(status, 'Active') AS status,
+                   COALESCE(min_duties, 0) AS min_duties,
+                   max_duties
             FROM additional_staff
             ORDER BY is_archived, category, initials
             """
@@ -389,8 +394,8 @@ async def add_additional_staff(
         try:
             conn.execute(
                 """
-                INSERT INTO additional_staff(category, initials, full_name, is_full_time, days_in_school, availability, last_updated)
-                VALUES (?, ?, ?, 1, '1111111111', NULL, ?)
+                INSERT INTO additional_staff(category, initials, full_name, is_full_time, days_in_school, availability, min_duties, max_duties, last_updated)
+                VALUES (?, ?, ?, 1, '1111111111', NULL, 0, NULL, ?)
                 """,
                 (category, initials.strip().upper(), full_name.strip(), datetime.now().isoformat()),
             )
@@ -418,20 +423,23 @@ async def update_additional_availability(
     request: Request,
     staff_id: int = Form(...),
     days_in_school: str = Form(...),
+    min_duties: int = Form(0),
+    max_duties: str = Form(""),
 ):
     redirect = _require_login(request)
     if redirect:
         return redirect
     days = "".join("1" if char == "1" else "0" for char in days_in_school)[:10].ljust(10, "1")
+    max_limit = int(max_duties) if str(max_duties).strip() else None
     with _conn_context() as conn:
         create_throttled_autosave(conn, "Additional staffing edit autosave")
         conn.execute(
             """
             UPDATE additional_staff
-            SET days_in_school = ?, is_full_time = ?, last_updated = ?
+            SET days_in_school = ?, is_full_time = ?, min_duties = ?, max_duties = ?, last_updated = ?
             WHERE id = ?
             """,
-            (days, 0 if "0" in days else 1, datetime.now().isoformat(), staff_id),
+            (days, 0 if "0" in days else 1, max(0, min_duties), max_limit, datetime.now().isoformat(), staff_id),
         )
         conn.commit()
     _flash(request, "Additional staff availability updated.")
@@ -595,6 +603,7 @@ def rules_page(request: Request):
     with _conn_context() as conn:
         rules = conn.execute("SELECT id, name, description, active FROM rules ORDER BY id").fetchall()
         max_duties = get_setting(conn, "max_duties_per_week", "4")
+        max_duties_day = get_setting(conn, "max_duties_per_day", "2")
         teacher_break_slots = get_setting(conn, "teacher_break_rota_slots", "6")
         exclusions = conn.execute(
             """
@@ -651,6 +660,7 @@ def rules_page(request: Request):
             "Rules",
             rules=rules,
             max_duties=max_duties,
+            max_duties_day=max_duties_day,
             teacher_break_slots=teacher_break_slots,
             exclusions=exclusions,
             custom_rules=custom_rules,
@@ -682,12 +692,14 @@ async def rules_toggle(request: Request, rule_id: int = Form(...), active: int =
 async def rules_settings(
     request: Request,
     max_duties_per_week: int = Form(...),
+    max_duties_per_day: int = Form(2),
     teacher_break_rota_slots: int = Form(6),
 ):
     redirect = _require_login(request)
     if redirect:
         return redirect
     value = str(max(0, min(30, max_duties_per_week)))
+    day_value = str(max(0, min(10, max_duties_per_day)))
     break_slots = str(max(0, min(10, teacher_break_rota_slots)))
     with _conn_context() as conn:
         create_throttled_autosave(conn, "Rules edit autosave")
@@ -707,10 +719,18 @@ async def rules_settings(
             """,
             (break_slots, datetime.now().isoformat()),
         )
+        conn.execute(
+            """
+            INSERT INTO app_settings(key, value, last_updated)
+            VALUES ('max_duties_per_day', ?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value, last_updated = excluded.last_updated
+            """,
+            (day_value, datetime.now().isoformat()),
+        )
         cleared = clear_inactive_teacher_break_slots(conn)
         conn.commit()
     clear_note = f" Cleared {cleared} inactive teacher break rota assignment(s)." if cleared else ""
-    _flash(request, f"Maximum duties per week set to {value}. Teacher break rota slots set to {break_slots}.{clear_note}")
+    _flash(request, f"Maximum duties set to {value} per week and {day_value} per day. Teacher break rota slots set to {break_slots}.{clear_note}")
     return RedirectResponse("/rules", status_code=303)
 
 

@@ -12,7 +12,7 @@
     <p><strong>Fairness:</strong> {{ fairness.label }}. {{ fairness.detail }}</p>
     {% if workload %}
     <table>
-        <tr><th>Staff</th><th>Role</th><th>Total duties</th><th>Heavy</th><th>Lunch</th><th>Isolation</th><th>Available periods</th></tr>
+        <tr><th>Staff</th><th>Role</th><th>Total duties</th><th>Heavy</th><th>Lunch</th><th>Isolation</th><th>Available periods</th><th>Flag</th></tr>
         {% for row in workload %}
         <tr>
             <td><strong>{{ row.initials }}</strong> {{ row.name }}</td>
@@ -22,6 +22,7 @@
             <td>{{ row.lunch }}</td>
             <td>{{ row.isolation }}</td>
             <td>{{ "%.1f"|format(row.available_periods) if row.available_periods < 999 else "Additional" }}</td>
+            <td>{{ row.outlier or "" }}</td>
         </tr>
         {% endfor %}
     </table>

@@ -85,6 +85,7 @@ def parse_timetable(xlsx_path: Path) -> dict:
             period_columns.append({**header, "end_col": next_col - 1})
 
     teacher_period_rows = []
+    teacher_subject_counts: dict[str, dict[str, int]] = {}
     real_teacher_day_presence: dict[str, set[tuple[int, str]]] = {}
     seen_period_rows = set()
     for period_info in period_columns:
@@ -94,6 +95,10 @@ def parse_timetable(xlsx_path: Path) -> dict:
                 if val and isinstance(val, str):
                     initials = val.strip()
                     if re.match(r"^[A-Z]{3}$", initials):
+                        subject = infer_subject_for_cell(ws, row, col)
+                        if subject:
+                            subject_counts = teacher_subject_counts.setdefault(initials, {})
+                            subject_counts[subject] = subject_counts.get(subject, 0) + 1
                         key = (initials, period_info["week"], period_info["day"], period_info["period"])
                         if key not in seen_period_rows:
                             seen_period_rows.add(key)
@@ -144,6 +149,8 @@ def parse_timetable(xlsx_path: Path) -> dict:
         )
         days_out = days_in_school.count("0")
         max_load = 70 - (6.5 * days_out)
+        subject_counts = teacher_subject_counts.get(initials, {})
+        detected_subject = max(subject_counts, key=subject_counts.get) if subject_counts else ""
         teachers_data.append(
             {
                 "initials": initials,
@@ -157,7 +164,8 @@ def parse_timetable(xlsx_path: Path) -> dict:
                 "classification": "Teacher",
                 "is_part_time": 1 if "0" in days_in_school else 0,
                 "days_in_school": days_in_school,
-                "subject": "",
+                "subject": detected_subject,
+                "max_lunch_duties": None,
             }
         )
 
@@ -168,6 +176,21 @@ def parse_timetable(xlsx_path: Path) -> dict:
         "teachers": teachers_data,
         "teacher_periods": teacher_period_rows,
     }
+
+
+def infer_subject_for_cell(ws, row: int, col: int) -> str:
+    ignored = {"", "AM", "PM", "BR", "BR1", "Tutor", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"}
+    for look_col in range(max(1, col - 5), col):
+        value = ws.cell(row=row, column=look_col).value
+        text = str(value or "").strip()
+        if 2 <= len(text) <= 40 and text not in ignored and not re.match(r"^[A-Z]{3}$", text):
+            return text
+    for look_row in range(max(1, row - 8), row):
+        value = ws.cell(row=look_row, column=1).value or ws.cell(row=look_row, column=2).value
+        text = str(value or "").strip()
+        if 2 <= len(text) <= 40 and text not in ignored and not re.match(r"^[A-Z]{3}$", text):
+            return text
+    return ""
 
 
 def table_rows_as_dicts(conn: sqlite3.Connection, table_name: str) -> list[dict]:
@@ -282,13 +305,13 @@ def save_parsed_timetable(conn: sqlite3.Connection, parsed: dict) -> None:
             """
             INSERT INTO teachers (
                 initials, full_name, is_teaching, lessons_week1, lessons_week2, total_lessons,
-                non_contact, protected_periods, classification, is_part_time, days_in_school, subject, last_updated
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                non_contact, protected_periods, classification, is_part_time, days_in_school, subject, max_lunch_duties, last_updated
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 t["initials"], t["full_name"], t["is_teaching"], t["lessons_week1"], t["lessons_week2"],
                 t["total_lessons"], t["non_contact"], t["protected_periods"], t["classification"],
-                t["is_part_time"], t["days_in_school"], t.get("subject", ""), datetime.now().isoformat(),
+                t["is_part_time"], t["days_in_school"], t.get("subject", ""), t.get("max_lunch_duties"), datetime.now().isoformat(),
             ),
         )
     for row in parsed["teacher_periods"]:
@@ -430,6 +453,10 @@ def duty_is_heavy(code: str) -> bool:
     return "Isolation" in code or "Lunch" in code or "Detention" in code
 
 
+def duty_is_lunch(code: str) -> bool:
+    return code.startswith("P4_Lunch_")
+
+
 def duty_is_optional(code: str) -> bool:
     return "Room_90" in code
 
@@ -444,6 +471,13 @@ def max_duties_per_week(conn: sqlite3.Connection) -> int:
         return int(float(get_setting(conn, "max_duties_per_week", "4")))
     except ValueError:
         return 4
+
+
+def max_duties_per_day(conn: sqlite3.Connection) -> int:
+    try:
+        return int(float(get_setting(conn, "max_duties_per_day", "2")))
+    except ValueError:
+        return 2
 
 
 def teacher_break_rota_slots(conn: sqlite3.Connection) -> int:
@@ -513,6 +547,68 @@ def staff_week_duty_count(conn: sqlite3.Connection, initials: str, week: int) ->
     return int(row["count"] or 0)
 
 
+def staff_day_duty_count(conn: sqlite3.Connection, initials: str, week: int, day: str) -> int:
+    row = conn.execute(
+        "SELECT COUNT(*) AS count FROM rota_assignments WHERE staff_initials = ? AND week = ? AND day = ?",
+        (initials, week, day),
+    ).fetchone()
+    return int(row["count"] or 0)
+
+
+def staff_total_duty_count(conn: sqlite3.Connection, initials: str) -> int:
+    row = conn.execute(
+        "SELECT COUNT(*) AS count FROM rota_assignments WHERE staff_initials = ?",
+        (initials,),
+    ).fetchone()
+    return int(row["count"] or 0)
+
+
+def staff_lunch_duty_count(conn: sqlite3.Connection, initials: str) -> int:
+    row = conn.execute(
+        "SELECT COUNT(*) AS count FROM rota_assignments WHERE staff_initials = ? AND period LIKE 'P4_Lunch_%'",
+        (initials,),
+    ).fetchone()
+    return int(row["count"] or 0)
+
+
+def teacher_free_periods_remaining(conn: sqlite3.Connection, initials: str) -> float:
+    row = conn.execute(
+        "SELECT total_lessons, protected_periods, days_in_school FROM teachers WHERE initials = ?",
+        (initials,),
+    ).fetchone()
+    if not row:
+        return 0
+    days = (row["days_in_school"] or "1111111111").ljust(10, "1")[:10]
+    max_load = 70 - (6.5 * days.count("0"))
+    return max_load - float(row["total_lessons"] or 0) - int(row["protected_periods"] or 0) - staff_total_duty_count(conn, initials)
+
+
+def teacher_free_periods_for_day(conn: sqlite3.Connection, initials: str, week: int, day: str) -> float:
+    teaching_rows = conn.execute(
+        """
+        SELECT period FROM teacher_periods
+        WHERE teacher_initials = ? AND week = ? AND day = ?
+        """,
+        (initials, week, day),
+    ).fetchall()
+    teaching = sum(0.5 if row["period"] == "Tutor" else 1 for row in teaching_rows)
+    return 7 - teaching - staff_day_duty_count(conn, initials, week, day)
+
+
+def teacher_lunch_limit_reached(conn: sqlite3.Connection, initials: str) -> bool:
+    row = conn.execute("SELECT max_lunch_duties FROM teachers WHERE initials = ?", (initials,)).fetchone()
+    if not row or row["max_lunch_duties"] is None:
+        return False
+    return staff_lunch_duty_count(conn, initials) >= int(row["max_lunch_duties"])
+
+
+def additional_max_reached(conn: sqlite3.Connection, initials: str) -> bool:
+    row = conn.execute("SELECT max_duties FROM additional_staff WHERE initials = ?", (initials,)).fetchone()
+    if not row or row["max_duties"] is None:
+        return False
+    return staff_total_duty_count(conn, initials) >= int(row["max_duties"])
+
+
 def teacher_break_week_count(conn: sqlite3.Connection, initials: str, week: int) -> int:
     row = conn.execute(
         """
@@ -537,6 +633,57 @@ def assigned_teacher_break_subjects(conn: sqlite3.Connection, week: int, day: st
         (week, day),
     ).fetchall()
     return {row["subject"] for row in rows}
+
+
+def previous_non_free_streak(conn: sqlite3.Connection, initials: str, week: int, day: str, code: str) -> int:
+    ordered_slots = []
+    for current_week in ROTA_WEEKS:
+        for current_day in ROTA_DAYS:
+            for duty_code in DUTY_ORDER:
+                ordered_slots.append((current_week, current_day, duty_code))
+    current = (week, day, code)
+    if current not in ordered_slots:
+        return 0
+    index = ordered_slots.index(current)
+    streak = 0
+    for prev_week, prev_day, prev_code in reversed(ordered_slots[:index]):
+        timetable_period = event_to_timetable_period(prev_code)
+        taught = False
+        if timetable_period:
+            taught = bool(
+                conn.execute(
+                    """
+                    SELECT 1 FROM teacher_periods
+                    WHERE teacher_initials = ? AND week = ? AND day = ? AND period = ?
+                    LIMIT 1
+                    """,
+                    (initials, prev_week, prev_day, timetable_period),
+                ).fetchone()
+            )
+        duty = bool(
+            conn.execute(
+                """
+                SELECT 1 FROM rota_assignments
+                WHERE staff_initials = ? AND week = ? AND day = ? AND period = ?
+                LIMIT 1
+                """,
+                (initials, prev_week, prev_day, prev_code),
+            ).fetchone()
+        )
+        if taught or duty:
+            streak += 1
+            continue
+        break
+    return streak
+
+
+def teacher_assignment_score(conn: sqlite3.Connection, initials: str, week: int, day: str, code: str) -> tuple[float, float]:
+    remaining = teacher_free_periods_remaining(conn, initials)
+    score = 100 + (10 * remaining)
+    if teacher_free_periods_for_day(conn, initials, week, day) <= 1:
+        score -= 1
+    tie_break = score - previous_non_free_streak(conn, initials, week, day, code)
+    return score, tie_break
 
 
 def staff_excluded_on_day(conn: sqlite3.Connection, initials: str, week: int, day: str) -> sqlite3.Row | None:
@@ -664,10 +811,18 @@ def strict_assignment_allowed(
     if source == "teacher":
         if not teacher_available(conn, initials, week, day, code):
             return False
+        if duty_is_lunch(code) and teacher_lunch_limit_reached(conn, initials):
+            return False
     else:
         if not additional_available(conn, initials, week, day, code):
             return False
+        if role in {"ESLT", "Chaplaincy", "Admin"} and not duty_is_lunch(code):
+            return False
+        if additional_max_reached(conn, initials):
+            return False
     if staff_week_duty_count(conn, initials, week) >= max_duties_per_week(conn):
+        return False
+    if staff_day_duty_count(conn, initials, week, day) >= max_duties_per_day(conn):
         return False
     if code.startswith("Teacher_Break_Rota_"):
         if source != "teacher":
@@ -697,10 +852,18 @@ def candidate_rejection_reason(
     if source == "teacher":
         if not teacher_available(conn, initials, week, day, code):
             return "not available, teaching, out of school, or already on a clashing duty"
+        if duty_is_lunch(code) and teacher_lunch_limit_reached(conn, initials):
+            return "maximum lunch duty limit reached"
     elif not additional_available(conn, initials, week, day, code):
         return "not active, out of school, or already on a clashing duty"
+    elif role in {"ESLT", "Chaplaincy", "Admin"} and not duty_is_lunch(code):
+        return "additional staff are only eligible for lunch duties"
+    elif additional_max_reached(conn, initials):
+        return "additional staff maximum duty limit reached"
     if staff_week_duty_count(conn, initials, week) >= max_duties_per_week(conn):
         return f"maximum duties per week reached ({max_duties_per_week(conn)})"
+    if staff_day_duty_count(conn, initials, week, day) >= max_duties_per_day(conn):
+        return f"maximum duties per day reached ({max_duties_per_day(conn)})"
     if code.startswith("Teacher_Break_Rota_") and source != "teacher":
         return "teacher break rota is teaching staff only"
     if code.startswith("Teacher_Break_Rota_") and teacher_break_week_count(conn, initials, week) >= 1:
@@ -787,9 +950,41 @@ def clear_conflicting_p4_assignments(conn: sqlite3.Connection, initials: str, we
 
 
 def assign_staff(conn: sqlite3.Connection, week: int, day: str, code: str, initials: str, role: str) -> int:
-    if not strict_assignment_allowed(conn, initials, role, week, day, code):
-        return -1
+    conflicting_rows: list[sqlite3.Row] = []
+    if code.startswith("P4_Lunch_"):
+        conflicting_rows = conn.execute(
+            """
+            SELECT period, staff_initials, staff_type
+            FROM rota_assignments
+            WHERE week = ? AND day = ? AND staff_initials = ?
+              AND (period LIKE 'P4A_%' OR period LIKE 'P4B_%' OR period LIKE 'P4C_%')
+            """,
+            (week, day, initials),
+        ).fetchall()
+    elif code.startswith("P4A_") or code.startswith("P4B_") or code.startswith("P4C_"):
+        conflicting_rows = conn.execute(
+            """
+            SELECT period, staff_initials, staff_type
+            FROM rota_assignments
+            WHERE week = ? AND day = ? AND staff_initials = ? AND period LIKE 'P4_Lunch_%'
+            """,
+            (week, day, initials),
+        ).fetchall()
     cleared = 0
+    if conflicting_rows:
+        cleared = clear_conflicting_p4_assignments(conn, initials, week, day, code)
+    if not strict_assignment_allowed(conn, initials, role, week, day, code):
+        for row in conflicting_rows:
+            conn.execute(
+                """
+                UPDATE rota_assignments
+                SET staff_initials = ?, staff_type = ?, last_updated = ?
+                WHERE week = ? AND day = ? AND period = ?
+                """,
+                (row["staff_initials"], row["staff_type"], datetime.now().isoformat(), week, day, row["period"]),
+            )
+        conn.commit()
+        return -1
     conn.execute(
         """
         UPDATE rota_assignments
@@ -859,6 +1054,51 @@ def duty_sort_key(slot: sqlite3.Row | tuple[int, str, str]) -> tuple:
     return (priority, week, ROTA_DAYS.index(day), DUTY_ORDER.get(code, 999))
 
 
+def eligible_teaching_staff_count(conn: sqlite3.Connection, week: int, day: str, code: str) -> int:
+    count = 0
+    for row in conn.execute("SELECT initials, classification AS role FROM teachers").fetchall():
+        if strict_assignment_allowed(conn, row["initials"], row["role"], week, day, code, "teacher"):
+            count += 1
+    return count
+
+
+def revised_slot_sort_key(conn: sqlite3.Connection, slot: sqlite3.Row) -> tuple:
+    code = slot["period"]
+    if duty_is_lunch(code):
+        return (0, slot["week"], ROTA_DAYS.index(slot["day"]), DUTY_ORDER.get(code, 999))
+    return (
+        1,
+        eligible_teaching_staff_count(conn, slot["week"], slot["day"], code),
+        slot["id"] if "id" in slot.keys() else DUTY_ORDER.get(code, 999),
+    )
+
+
+def choose_lunch_candidate(conn: sqlite3.Connection, eligible: list[dict], code: str, week: int, day: str) -> dict | None:
+    additional_priority = {"ESLT": 0, "Chaplaincy": 1, "Admin": 2}
+    additional = [cand for cand in eligible if cand["role"] in additional_priority]
+    if additional:
+        additional.sort(
+            key=lambda cand: (
+                additional_priority[cand["role"]],
+                0 if staff_total_duty_count(conn, cand["initials"]) < int(cand.get("min_duties") or 0) else 1,
+                staff_total_duty_count(conn, cand["initials"]),
+                previous_non_free_streak(conn, cand["initials"], week, day, code),
+                cand["initials"],
+            )
+        )
+    teaching = [cand for cand in eligible if cand["source"] == "teacher"]
+    if code != "P4_Lunch_1" and additional:
+        return additional[0]
+    if teaching:
+        scored = []
+        for cand in teaching:
+            score, tie_break = teacher_assignment_score(conn, cand["initials"], week, day, code)
+            scored.append((-score, -tie_break, cand["initials"], cand))
+        scored.sort()
+        return scored[0][-1]
+    return additional[0] if additional else None
+
+
 def auto_assign_empty_slots(conn: sqlite3.Connection) -> dict:
     ensure_duty_event_rows(conn)
     pre_repaired = repair_p4_lunch_conflicts(conn)
@@ -889,7 +1129,7 @@ def auto_assign_empty_slots(conn: sqlite3.Connection) -> dict:
 
     for row in conn.execute(
         """
-        SELECT initials, category AS role FROM additional_staff
+        SELECT initials, category AS role, min_duties, max_duties FROM additional_staff
         WHERE COALESCE(is_archived, 0) = 0 AND COALESCE(status, 'Active') = 'Active'
         """
     ).fetchall():
@@ -904,16 +1144,18 @@ def auto_assign_empty_slots(conn: sqlite3.Connection) -> dict:
                 "duties": current_duties,
                 "heavy": heavy_count,
                 "source": "additional",
+                "min_duties": int(row["min_duties"] or 0),
+                "max_duties": row["max_duties"],
             }
         )
 
     empty_slots = conn.execute(
-        "SELECT week, day, period FROM rota_assignments WHERE staff_initials IS NULL"
+        "SELECT id, week, day, period FROM rota_assignments WHERE staff_initials IS NULL"
     ).fetchall()
     active_codes = active_duty_codes(conn)
     assigned = 0
     issues = []
-    for slot in sorted(empty_slots, key=duty_sort_key):
+    for slot in sorted(empty_slots, key=lambda item: revised_slot_sort_key(conn, item)):
         week, day, code = slot["week"], slot["day"], slot["period"]
         if code not in active_codes:
             continue
@@ -923,16 +1165,31 @@ def auto_assign_empty_slots(conn: sqlite3.Connection) -> dict:
         for cand in candidates:
             if not strict_assignment_allowed(conn, cand["initials"], cand["role"], week, day, code, cand["source"]):
                 continue
-            subject_score = 0
-            if code.startswith("Teacher_Break_Rota_") and break_subjects:
-                subject_score = 0 if cand.get("subject", "") in break_subjects else 1
-            eligible.append((subject_score, allowed_roles.index(cand["role"]), -cand["available"], cand["duties"], cand["heavy"], cand["initials"], cand))
+            if duty_is_lunch(code) and cand["source"] == "additional" and cand["role"] not in {"ESLT", "Chaplaincy", "Admin"}:
+                continue
+            if not duty_is_lunch(code) and cand["source"] == "additional" and cand["role"] in {"ESLT", "Chaplaincy", "Admin"}:
+                continue
+            if cand["source"] == "teacher":
+                score, tie_break = teacher_assignment_score(conn, cand["initials"], week, day, code)
+                subject_score = 0
+                if code.startswith("Teacher_Break_Rota_") and break_subjects:
+                    subject_score = 0 if cand.get("subject", "") in break_subjects else 1
+                eligible.append({"sort": (subject_score, -score, -tie_break, cand["initials"]), **cand})
+            else:
+                eligible.append(cand)
         if not eligible:
             if not duty_is_optional(code):
                 issues.append(slot)
             continue
-        eligible.sort()
-        chosen = eligible[0][-1]
+        if duty_is_lunch(code):
+            chosen = choose_lunch_candidate(conn, eligible, code, week, day)
+        else:
+            eligible.sort(key=lambda cand: cand.get("sort", (999, cand["initials"])))
+            chosen = eligible[0]
+        if not chosen:
+            if not duty_is_optional(code):
+                issues.append(slot)
+            continue
         conn.execute(
             """
             UPDATE rota_assignments
@@ -1042,6 +1299,13 @@ def workload_summary(conn: sqlite3.Connection) -> list[dict]:
         if "Isolation" in row["period"]:
             item["isolation"] += 1
     rows = list(staff.values())
+    role_groups: dict[str, list[int]] = {}
+    for row in rows:
+        role_groups.setdefault(row["role"], []).append(row["duties"])
+    role_avgs = {role: (sum(values) / len(values) if values else 0) for role, values in role_groups.items()}
+    for row in rows:
+        diff = row["duties"] - role_avgs.get(row["role"], 0)
+        row["outlier"] = "High" if diff > 3 else ("Low" if diff < -3 else "")
     return sorted(rows, key=lambda item: (-item["duties"], -item["heavy"], item["initials"]))
 
 
@@ -1078,11 +1342,21 @@ def proposed_review(conn: sqlite3.Connection) -> dict:
             }
         )
     workload = workload_summary(conn)
+    lunch_additional = conn.execute(
+        """
+        SELECT r.week, r.day, r.period, r.staff_initials, r.staff_type
+        FROM rota_assignments r
+        WHERE r.period LIKE 'P4_Lunch_%'
+          AND r.staff_type IN ('ESLT', 'Chaplaincy', 'Admin')
+        ORDER BY r.week, r.day, r.period
+        """
+    ).fetchall()
     return {
         "blanks": blanks,
         "conflicts": get_p4_lunch_conflicts(conn),
         "workload": workload,
         "fairness": fairness_summary(workload),
+        "lunch_additional": lunch_additional,
     }
 
 
