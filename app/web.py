@@ -36,6 +36,7 @@ from .services import (
     available_staff,
     blank_duty_reason,
     build_master_style_workbook,
+    candidate_rejection_reason,
     clear_inactive_teacher_break_slots,
     create_throttled_autosave,
     create_version_snapshot,
@@ -530,6 +531,7 @@ async def prebuilt_assign(
         targets = [(target_week, target_day) for target_week in ROTA_WEEKS for target_day in ROTA_DAYS]
     assigned = 0
     skipped = 0
+    skip_details = []
     cleared = 0
     with _conn_context() as conn:
         create_throttled_autosave(conn, "Pre-built assignment autosave")
@@ -537,15 +539,23 @@ async def prebuilt_assign(
             possible = available_staff(conn, target_week, target_day, period)
             if not any(item["initials"] == initials and item["role"] == role for item in possible):
                 skipped += 1
+                reason = candidate_rejection_reason(conn, initials, role, target_week, target_day, period)
+                skip_details.append(f"W{target_week} {target_day}: {reason or 'not available for this duty'}")
                 continue
             result = assign_staff(conn, target_week, target_day, period, initials, role)
             if result < 0:
                 skipped += 1
+                reason = candidate_rejection_reason(conn, initials, role, target_week, target_day, period)
+                skip_details.append(f"W{target_week} {target_day}: {reason or 'assignment blocked by active rules'}")
                 continue
             cleared += result
             assigned += 1
     clear_note = f" Cleared {cleared} Period 4 clash(es)." if cleared else ""
-    skip_note = f" Skipped {skipped} unavailable/busy session(s)." if skipped else ""
+    skip_note = ""
+    if skipped:
+        shown = "; ".join(skip_details[:6])
+        more = f"; plus {len(skip_details) - 6} more" if len(skip_details) > 6 else ""
+        skip_note = f" Skipped {skipped} session(s): {shown}{more}."
     _flash(request, f"Assigned {initials} to {assigned} session(s).{skip_note}{clear_note}")
     return RedirectResponse(f"/prebuilt?week={week}&day={day}&period={period}", status_code=303)
 
