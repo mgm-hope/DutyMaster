@@ -828,10 +828,11 @@ def strict_assignment_allowed(
             return False
         if additional_max_reached(conn, initials):
             return False
-    if staff_week_duty_count(conn, initials, week) >= max_duties_per_week(conn):
-        return False
-    if staff_day_duty_count(conn, initials, week, day) >= max_duties_per_day(conn):
-        return False
+    if source == "teacher":
+        if staff_week_duty_count(conn, initials, week) >= max_duties_per_week(conn):
+            return False
+        if staff_day_duty_count(conn, initials, week, day) >= max_duties_per_day(conn):
+            return False
     if code.startswith("Teacher_Break_Rota_"):
         if source != "teacher":
             return False
@@ -874,10 +875,11 @@ def candidate_rejection_reason(
         return "additional staff are only eligible for lunch duties"
     elif additional_max_reached(conn, initials):
         return "additional staff maximum duty limit reached"
-    if staff_week_duty_count(conn, initials, week) >= max_duties_per_week(conn):
-        return f"maximum duties per week reached ({max_duties_per_week(conn)})"
-    if staff_day_duty_count(conn, initials, week, day) >= max_duties_per_day(conn):
-        return f"maximum duties per day reached ({max_duties_per_day(conn)})"
+    if source == "teacher":
+        if staff_week_duty_count(conn, initials, week) >= max_duties_per_week(conn):
+            return f"maximum duties per week reached ({max_duties_per_week(conn)})"
+        if staff_day_duty_count(conn, initials, week, day) >= max_duties_per_day(conn):
+            return f"maximum duties per day reached ({max_duties_per_day(conn)})"
     if code.startswith("Teacher_Break_Rota_") and source != "teacher":
         return "teacher break rota is teaching staff only"
     if code.startswith("Teacher_Break_Rota_") and teacher_break_week_count(conn, initials, week) >= 1:
