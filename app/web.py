@@ -477,6 +477,13 @@ def prebuilt(request: Request, week: int = 1, day: str = "Mon", period: str | No
     redirect = _require_login(request)
     if redirect:
         return redirect
+    if week not in ROTA_WEEKS:
+        week = 1
+    if day not in ROTA_DAYS:
+        day = "Mon"
+    valid_periods = set(DUTY_LABELS)
+    if period not in valid_periods:
+        period = None
     with _conn_context() as conn:
         ensure_duty_event_rows(conn)
         assignments = {

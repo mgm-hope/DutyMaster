@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <h2>Pre-Built Duty Events</h2>
+
 <section class="panel">
     <h3>Build tools</h3>
     <form method="post" action="/prebuilt/auto-assign" class="inline-form">
@@ -32,8 +33,11 @@
         <tr><th>Week</th><th>Day</th><th>Duty</th><th>Would assign</th><th>Role</th></tr>
         {% for row in preview.would_assign[:40] %}
         <tr>
-            <td>{{ row.week }}</td><td>{{ row.day }}</td><td>{{ duty_labels.get(row.period, row.period) }}</td>
-            <td>{{ row.staff_initials }}</td><td>{{ row.staff_type }}</td>
+            <td>{{ row.week }}</td>
+            <td>{{ row.day }}</td>
+            <td>{{ duty_labels.get(row.period, row.period) }}</td>
+            <td>{{ row.staff_initials }}</td>
+            <td>{{ row.staff_type }}</td>
         </tr>
         {% endfor %}
     </table>
@@ -43,7 +47,9 @@
         <tr><th>Week</th><th>Day</th><th>Duty left blank</th><th>Reason</th></tr>
         {% for row in preview.blanks[:40] %}
         <tr>
-            <td>{{ row.week }}</td><td>{{ row.day }}</td><td>{{ duty_labels.get(row.period, row.period) }}</td>
+            <td>{{ row.week }}</td>
+            <td>{{ row.day }}</td>
+            <td>{{ duty_labels.get(row.period, row.period) }}</td>
             <td>{{ row.reason }}</td>
         </tr>
         {% endfor %}
@@ -56,24 +62,36 @@
 <section class="panel danger">
     <h3>Period 4 lunch conflicts</h3>
     <p>These must be corrected manually by clearing one side of the clash.</p>
-    <table><tr><th>Week</th><th>Day</th><th>Staff</th><th>Duties</th></tr>
-    {% for row in conflicts %}
-    <tr><td>{{ row["week"] }}</td><td>{{ row["day"] }}</td><td>{{ row["staff_initials"] }}</td><td>{{ row["duties"] }}</td></tr>
-    {% endfor %}
+    <table>
+        <tr><th>Week</th><th>Day</th><th>Staff</th><th>Duties</th></tr>
+        {% for row in conflicts %}
+        <tr>
+            <td>{{ row["week"] }}</td>
+            <td>{{ row["day"] }}</td>
+            <td>{{ row["staff_initials"] }}</td>
+            <td>{{ row["duties"] }}</td>
+        </tr>
+        {% endfor %}
     </table>
 </section>
 {% endif %}
 
 {% if selected.period %}
-<section class="panel">
-    <h3>Assign: Week {{ selected.week }} {{ selected.day }} — {{ duty_labels[selected.period] }}</h3>
+<section class="panel" id="assign-panel">
+    <h3>Assign: Week {{ selected.week }} {{ selected.day }} - {{ duty_labels[selected.period] }}</h3>
+    <p class="muted">Selected duty: {{ selected.period }}. Available staff update from this exact week, day, and duty.</p>
     <form method="post" action="/prebuilt/assign" class="inline-form">
         <input type="hidden" name="week" value="{{ selected.week }}">
         <input type="hidden" name="day" value="{{ selected.day }}">
         <input type="hidden" name="period" value="{{ selected.period }}">
         <select name="staff_value">
+            {% if not candidates %}
+            <option>No available staff for this selected duty</option>
+            {% endif %}
             {% for s in candidates %}
-            <option value="{{ s.initials }}|{{ s.role }}">{{ s.initials }} - {{ s.name }} ({{ s.role }}{% if s.subject %}, {{ s.subject }}{% endif %})</option>
+            <option value="{{ s.initials }}|{{ s.role }}">
+                {{ s.initials }} - {{ s.name }} ({{ s.role }}{% if s.subject %}, {{ s.subject }}{% endif %})
+            </option>
             {% endfor %}
         </select>
         <select name="scope">
@@ -96,15 +114,29 @@
 <section class="panel">
     <h3>{{ section_name }}</h3>
     <table class="rota-table">
-        <tr><th>Duty</th><th colspan="5">Week 1</th><th colspan="5">Week 2</th></tr>
-        <tr><th></th>{% for d in days %}<th>{{ d }}</th>{% endfor %}{% for d in days %}<th>{{ d }}</th>{% endfor %}</tr>
+        <tr>
+            <th>Duty</th>
+            <th colspan="5">Week 1</th>
+            <th colspan="5">Week 2</th>
+        </tr>
+        <tr>
+            <th></th>
+            {% for d in days %}<th>{{ d }}</th>{% endfor %}
+            {% for d in days %}<th>{{ d }}</th>{% endfor %}
+        </tr>
         {% for code, label in events %}
         <tr>
             <th>{{ label }}</th>
             {% for w in weeks %}
                 {% for d in days %}
                 {% set cell_key = w ~ ":" ~ d ~ ":" ~ code %}
-                <td><a href="/prebuilt?week={{ w }}&day={{ d }}&period={{ code }}">{{ assignments.get(cell_key, "—") or "—" }}</a></td>
+                {% set is_selected = selected.period == code and selected.week == w and selected.day == d %}
+                <td class="{% if is_selected %}selected-duty-cell{% endif %}">
+                    <a href="/prebuilt?week={{ w }}&day={{ d }}&period={{ code }}&selected={{ w }}-{{ d }}-{{ code }}#assign-panel"
+                       title="Assign {{ label }} for Week {{ w }} {{ d }}">
+                        {{ assignments.get(cell_key, "-") or "-" }}
+                    </a>
+                </td>
                 {% endfor %}
             {% endfor %}
         </tr>
