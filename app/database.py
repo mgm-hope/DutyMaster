@@ -153,6 +153,7 @@ DEFAULT_RULES = [
     ("Period 7 Mode", "Period 7 duties are ignored by default. In Rules, you can switch them to SLT only or Pastoral only."),
     ("Break Duty Lead = SLT or Pastoral", "Break Duty Lead can only be assigned to SLT or Pastoral staff."),
     ("Even SLT Isolation Distribution", "SLT isolation duties should be spread as evenly as possible across participating SLT members."),
+    ("Balanced SLT Duty Distribution", "SLT duties should be shared as evenly as possible across available SLT members. For SLT-only duties, DutyMaster prioritises the eligible SLT member with the fewest duties so far while still respecting availability, clashes, exclusions, and manual assignments."),
     ("Even Pastoral Distribution", "Pastoral staff should be spread evenly across Pastoral Support, Room 90, Isolation, late detention, and lunch pastoral duties."),
     ("No Double Booking", "Staff cannot be assigned to two duties in the same time slot."),
     ("Part-Time Day Protection", "Staff cannot be assigned duties on days they are marked out of school."),

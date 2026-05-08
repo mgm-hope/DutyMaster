@@ -233,8 +233,9 @@
     <p><strong>2. Additional staff lunch rule.</strong> ESLT, Chaplaincy and Admin are only considered for lunch duties. They are never used for non-lunch duties. For lunch, they are used by priority: ESLT first, then Chaplaincy, then Admin, while respecting their own max duty limits.</p>
     <p><strong>3. Slot order.</strong> Lunch duties are processed first. All remaining duties are processed by the number of eligible teaching staff available: the slot with the fewest available teaching staff is filled first. Equal slots keep stable database order, with no randomisation.</p>
     <p><strong>4. Teacher score.</strong> Eligible teaching staff start at 100 points. DutyMaster adds 10 points for every free period still remaining across the two-week cycle. If the duty would use the teacher's last free period that day, 1 point is deducted. The score is recalculated fresh for every slot.</p>
-    <p><strong>5. Tie-breaker.</strong> If teaching staff have the same score, DutyMaster looks backwards from the duty slot and deducts 1 point for each consecutive non-free period since the teacher's most recent free period. The shortest busy streak wins. If still tied, initials provide a stable final order.</p>
-    <p><strong>6. Output checks.</strong> The Proposed Timetable shows the rota, blank-duty reasons, workload by role, fairness notes, and lunch duties where additional staff were used.</p>
+    <p><strong>5. SLT balance.</strong> For duties that are SLT-only, DutyMaster applies the Balanced SLT Duty Distribution rule before the normal teacher score. It offers or assigns the eligible SLT member with the fewest duties so far, then uses heavy-duty count, recent non-free streak, and initials as stable tie-breakers.</p>
+    <p><strong>6. Tie-breaker.</strong> If teaching staff have the same score, DutyMaster looks backwards from the duty slot and deducts 1 point for each consecutive non-free period since the teacher's most recent free period. The shortest busy streak wins. If still tied, initials provide a stable final order.</p>
+    <p><strong>7. Output checks.</strong> The Proposed Timetable shows the rota, blank-duty reasons, workload by role, fairness notes, and lunch duties where additional staff were used.</p>
 </section>
 
 <section class="panel">

@@ -504,6 +504,13 @@ def teacher_break_rota_slots(conn: sqlite3.Connection) -> int:
         return 6
 
 
+def rule_active(conn: sqlite3.Connection, name: str, default: bool = True) -> bool:
+    row = conn.execute("SELECT active FROM rules WHERE name = ?", (name,)).fetchone()
+    if not row:
+        return default
+    return bool(row["active"])
+
+
 def active_duty_sections(conn: sqlite3.Connection) -> list[tuple[str, list[tuple[str, str]]]]:
     active_slots = teacher_break_rota_slots(conn)
     sections = []
@@ -832,6 +839,17 @@ def role_priority_for_duty_with_settings(conn: sqlite3.Connection, code: str) ->
     return role_priority_for_duty(code)
 
 
+def slt_balance_sort_key(conn: sqlite3.Connection, initials: str, week: int, day: str, code: str) -> tuple:
+    rows = conn.execute("SELECT period FROM rota_assignments WHERE staff_initials = ?", (initials,)).fetchall()
+    heavy_count = sum(1 for row in rows if duty_is_heavy(row["period"]))
+    return (
+        staff_total_duty_count(conn, initials),
+        heavy_count,
+        previous_non_free_streak(conn, initials, week, day, code),
+        initials,
+    )
+
+
 def strict_assignment_allowed(
     conn: sqlite3.Connection,
     initials: str,
@@ -953,6 +971,11 @@ def blank_duty_reason(conn: sqlite3.Connection, week: int, day: str, code: str) 
 def available_staff(conn: sqlite3.Connection, week: int, day: str, code: str) -> list[dict]:
     staff = []
     break_subjects = assigned_teacher_break_subjects(conn, week, day) if code and code.startswith("Teacher_Break_Rota_") else set()
+    allowed_roles = role_priority_for_duty_with_settings(conn, code)
+    balance_slt = (
+        rule_active(conn, "Balanced SLT Duty Distribution")
+        and allowed_roles == ["SLT"]
+    )
     for row in conn.execute("SELECT initials, full_name, classification, COALESCE(subject, '') AS subject FROM teachers ORDER BY initials").fetchall():
         if strict_assignment_allowed(conn, row["initials"], row["classification"], week, day, code, "teacher"):
             staff.append({"initials": row["initials"], "name": row["full_name"], "role": row["classification"], "subject": row["subject"] or ""})
@@ -965,6 +988,8 @@ def available_staff(conn: sqlite3.Connection, week: int, day: str, code: str) ->
     ).fetchall():
         if strict_assignment_allowed(conn, row["initials"], row["category"], week, day, code, "additional"):
             staff.append({"initials": row["initials"], "name": row["full_name"], "role": row["category"], "subject": ""})
+    if balance_slt:
+        return sorted(staff, key=lambda item: slt_balance_sort_key(conn, item["initials"], week, day, code))
     return sorted(
         staff,
         key=lambda item: (
@@ -1218,7 +1243,11 @@ def auto_assign_empty_slots(conn: sqlite3.Connection) -> dict:
         week, day, code = slot["week"], slot["day"], slot["period"]
         if code not in active_codes:
             continue
-        allowed_roles = role_priority_for_duty(code)
+        allowed_roles = role_priority_for_duty_with_settings(conn, code)
+        balance_slt = (
+            rule_active(conn, "Balanced SLT Duty Distribution")
+            and allowed_roles == ["SLT"]
+        )
         eligible = []
         break_subjects = assigned_teacher_break_subjects(conn, week, day) if code.startswith("Teacher_Break_Rota_") else set()
         for cand in candidates:
@@ -1233,9 +1262,16 @@ def auto_assign_empty_slots(conn: sqlite3.Connection) -> dict:
                 subject_score = 0
                 if code.startswith("Teacher_Break_Rota_") and break_subjects:
                     subject_score = 0 if cand.get("subject", "") in break_subjects else 1
-                eligible.append({"sort": (subject_score, -score, -tie_break, cand["initials"]), **cand})
+                if balance_slt:
+                    sort_key = slt_balance_sort_key(conn, cand["initials"], week, day, code)
+                else:
+                    sort_key = (subject_score, -score, -tie_break, cand["initials"])
+                eligible.append({"sort": sort_key, **cand})
             else:
-                eligible.append(cand)
+                if balance_slt:
+                    eligible.append({"sort": slt_balance_sort_key(conn, cand["initials"], week, day, code), **cand})
+                else:
+                    eligible.append(cand)
         if not eligible:
             if not duty_is_optional_for_conn(conn, code):
                 issues.append(slot)
