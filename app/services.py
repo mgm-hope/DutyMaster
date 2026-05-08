@@ -384,6 +384,62 @@ def duty_time_group(code: str) -> str:
     return code
 
 
+def duty_family(code: str) -> str:
+    family_markers = [
+        ("Pastoral_Support", "Pastoral Support"),
+        ("Room_90", "Room 90"),
+        ("Isolation", "Isolation"),
+        ("First_Duty", "First Duty"),
+        ("Late_Detention", "Late Detention"),
+        ("Duty_Lead", "Duty Lead"),
+        ("Rest_Break", "Rest Break"),
+        ("AOW", "Act of Worship"),
+    ]
+    for marker, family in family_markers:
+        if marker in code:
+            return family
+    if code.startswith("P4_Lunch_"):
+        return "Lunch Duty"
+    if code.startswith("P7_Detention"):
+        return "Detention Duty"
+    return code
+
+
+def previous_duty_time_groups(group: str) -> list[str]:
+    sequence = ["Tutor", "P1", "P2", "Break", "TeacherBreak", "P3", "P4A", "P4B", "P4C", "P5", "P6", "P7"]
+    if group == "P4_Lunch":
+        return ["P3"]
+    if group not in sequence:
+        return []
+    index = sequence.index(group)
+    if index == 0:
+        return []
+    previous = sequence[index - 1]
+    if previous == "TeacherBreak":
+        return ["TeacherBreak", "Break"]
+    return [previous]
+
+
+def pastoral_repeats_same_duty_previous_period(conn: sqlite3.Connection, initials: str, week: int, day: str, code: str) -> bool:
+    current_family = duty_family(code)
+    previous_groups = set(previous_duty_time_groups(duty_time_group(code)))
+    if not previous_groups:
+        return False
+    rows = conn.execute(
+        """
+        SELECT period
+        FROM rota_assignments
+        WHERE staff_initials = ? AND week = ? AND day = ?
+        """,
+        (initials, week, day),
+    ).fetchall()
+    return any(
+        duty_time_group(row["period"]) in previous_groups
+        and duty_family(row["period"]) == current_family
+        for row in rows
+    )
+
+
 def groups_conflict(existing_group: str, requested_group: str) -> bool:
     if existing_group == requested_group:
         return True
@@ -868,6 +924,9 @@ def strict_assignment_allowed(
     allowed_roles = role_priority_for_duty_with_settings(conn, code)
     if role not in allowed_roles:
         return False
+    if role == "Pastoral" and rule_active(conn, "No Consecutive Same Pastoral Duty"):
+        if pastoral_repeats_same_duty_previous_period(conn, initials, week, day, code):
+            return False
     if source is None:
         source = "teacher" if conn.execute("SELECT 1 FROM teachers WHERE initials = ?", (initials,)).fetchone() else "additional"
     if source == "teacher":
@@ -910,6 +969,9 @@ def candidate_rejection_reason(
     allowed_roles = role_priority_for_duty_with_settings(conn, code)
     if role not in allowed_roles:
         return f"role {role} is not allowed for this duty"
+    if role == "Pastoral" and rule_active(conn, "No Consecutive Same Pastoral Duty"):
+        if pastoral_repeats_same_duty_previous_period(conn, initials, week, day, code):
+            return "pastoral staff should not repeat the same duty in consecutive periods"
     if source is None:
         source = "teacher" if conn.execute("SELECT 1 FROM teachers WHERE initials = ?", (initials,)).fetchone() else "additional"
     if source == "teacher":

@@ -155,6 +155,7 @@ DEFAULT_RULES = [
     ("Even SLT Isolation Distribution", "SLT isolation duties should be spread as evenly as possible across participating SLT members."),
     ("Balanced SLT Duty Distribution", "SLT duties should be shared as evenly as possible across available SLT members. For SLT-only duties, DutyMaster prioritises the eligible SLT member with the fewest duties so far while still respecting availability, clashes, exclusions, and manual assignments."),
     ("Even Pastoral Distribution", "Pastoral staff should be spread evenly across Pastoral Support, Room 90, Isolation, late detention, and lunch pastoral duties."),
+    ("No Consecutive Same Pastoral Duty", "Pastoral staff should not be assigned to the same duty type in consecutive period blocks on the same day. For example, avoid Isolation followed by Isolation in the next period where another eligible member of staff exists."),
     ("No Double Booking", "Staff cannot be assigned to two duties in the same time slot."),
     ("One Duty Per Period", "During Tutor, Periods 1, 2, 3, 5, and 6, a staff member can only be assigned to one duty within that period. Period 4 lunch and 4A/4B/4C use the separate lunch clash rules."),
     ("Part-Time Day Protection", "Staff cannot be assigned duties on days they are marked out of school."),
