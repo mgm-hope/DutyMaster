@@ -510,6 +510,8 @@ def active_duty_sections(conn: sqlite3.Connection) -> list[tuple[str, list[tuple
     for section, events in DUTY_SECTIONS:
         if section == "Teaching Staff Break Rota":
             events = [(code, label) for code, label in events if int(code.rsplit("_", 1)[1]) <= active_slots]
+        if section == "Period 7" and p7_mode(conn) == "ignore":
+            continue
         sections.append((section, events))
     return sections
 
