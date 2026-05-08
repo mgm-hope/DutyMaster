@@ -1443,7 +1443,7 @@ def build_master_style_workbook(conn: sqlite3.Connection) -> BytesIO:
             "P4C_First_Duty": 73, "P4C_Pastoral_Support": 75, "P4C_Isolation": 77, "P4C_Rest_Break": 80,
             "P5_First_Duty": 82, "P5_Pastoral_Support": 84, "P5_Room_90": 86, "P5_Isolation": 88,
             "P6_First_Duty": 90, "P6_Pastoral_Support": 92, "P6_Room_90": 94, "P6_Isolation": 96,
-            "P7_Homework_Club": 98, "P7_Detention_Drop_In": 102,
+            "P7_Homework_Club": 98,
         }
         for code, row in master_row_map.items():
             for (week, day), col in day_columns.items():
