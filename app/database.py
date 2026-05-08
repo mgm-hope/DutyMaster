@@ -167,6 +167,7 @@ DEFAULT_RULES = [
     ("Period 4 Mutual Exclusion", "Staff assigned to Period 4 Lunch cannot also be assigned to 4A, 4B, or 4C duties on the same day, and vice versa."),
     ("Lunch Fill Order", "After suitable teachers are used for lunch duty, fill remaining lunch spaces from ESLT, then Chaplaincy, then Admin, and finally SLT."),
     ("Lunch Off-Duty / Rest Protection", "During Period 4 split lunch, Pastoral allocation must preserve the intended rest/off-duty rotation across 4A, 4B, and 4C where possible."),
+    ("Period 4A/4B/4C Staffing", "In Period 4A, 4B, and 4C, First Duty is SLT only. Pastoral Support, Isolation, and Rest Break are Pastoral only so Pastoral staff can rotate through support, isolation, and rest."),
     ("Room 90 Optional", "Room 90 is the lowest-priority duty. Auto-assign may leave it blank and should not log it as an insufficient-staff problem."),
     ("Teacher Break Rota", "Add a teacher-only duty between Break and Period 3. Default is 6 staff, adjustable in Rules. Teaching staff can do this at most once per week, with subject grouping preferred."),
 ]

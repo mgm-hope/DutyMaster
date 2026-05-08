@@ -782,6 +782,14 @@ def role_priority_for_duty(code: str) -> list[str]:
         return ["SLT"]
     if code in {"Tutor_1st_Duty", "Tutor_AOW", "P1_Isolation"}:
         return ["SLT"]
+    if code in {"P4A_First_Duty", "P4B_First_Duty", "P4C_First_Duty"}:
+        return ["SLT"]
+    if code in {
+        "P4A_Pastoral_Support", "P4A_Isolation", "P4A_Rest_Break",
+        "P4B_Pastoral_Support", "P4B_Isolation", "P4B_Rest_Break",
+        "P4C_Pastoral_Support", "P4C_Isolation", "P4C_Rest_Break",
+    }:
+        return ["Pastoral"]
     if code == "Break_Duty_Lead":
         return ["SLT", "Pastoral"]
     if code == "Break_Late_Detention":
