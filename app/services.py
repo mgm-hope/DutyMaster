@@ -465,8 +465,17 @@ def duty_is_lunch(code: str) -> bool:
     return code.startswith("P4_Lunch_")
 
 
+def p7_mode(conn: sqlite3.Connection) -> str:
+    mode = get_setting(conn, "p7_mode", get_setting(conn, "p7_detention_mode", "ignore")).strip().lower()
+    return mode if mode in {"ignore", "slt", "pastoral"} else "ignore"
+
+
 def duty_is_optional(code: str) -> bool:
     return "Room_90" in code
+
+
+def duty_is_optional_for_conn(conn: sqlite3.Connection, code: str) -> bool:
+    return duty_is_optional(code) or (code.startswith("P7_") and p7_mode(conn) == "ignore")
 
 
 def get_setting(conn: sqlite3.Connection, key: str, default: str) -> str:
@@ -805,8 +814,20 @@ def role_priority_for_duty(code: str) -> list[str]:
     if code.startswith("P4_Lunch_"):
         return ["Teacher", "HOF", "ESLT", "Chaplaincy", "Admin", "SLT"]
     if code.startswith("P7_Detention"):
-        return ["Pastoral", "SLT", "Teacher", "HOF"]
+        return ["Pastoral", "SLT"]
     return ["Pastoral", "SLT", "Teacher", "HOF", "ESLT", "Chaplaincy", "Admin"]
+
+
+def role_priority_for_duty_with_settings(conn: sqlite3.Connection, code: str) -> list[str]:
+    if code.startswith("P7_"):
+        mode = p7_mode(conn)
+        if mode == "ignore":
+            return []
+        if mode == "slt":
+            return ["SLT"]
+        if mode == "pastoral":
+            return ["Pastoral"]
+    return role_priority_for_duty(code)
 
 
 def strict_assignment_allowed(
@@ -820,7 +841,7 @@ def strict_assignment_allowed(
 ) -> bool:
     if staff_excluded_on_day(conn, initials, week, day):
         return False
-    allowed_roles = role_priority_for_duty(code)
+    allowed_roles = role_priority_for_duty_with_settings(conn, code)
     if role not in allowed_roles:
         return False
     if source is None:
@@ -862,7 +883,7 @@ def candidate_rejection_reason(
     exclusion = staff_excluded_on_day(conn, initials, week, day)
     if exclusion:
         return f"excluded that day: {exclusion['reason'] or 'one-off exclusion'}"
-    allowed_roles = role_priority_for_duty(code)
+    allowed_roles = role_priority_for_duty_with_settings(conn, code)
     if role not in allowed_roles:
         return f"role {role} is not allowed for this duty"
     if source is None:
@@ -899,11 +920,13 @@ def candidate_rejection_reason(
 
 
 def blank_duty_reason(conn: sqlite3.Connection, week: int, day: str, code: str) -> str:
+    if code.startswith("P7_") and p7_mode(conn) == "ignore":
+        return "Period 7 ignored in Rules"
     if duty_is_optional(code):
         return "Room 90 optional"
     if code.startswith("Teacher_Break_Rota_") and int(code.rsplit("_", 1)[1]) > teacher_break_rota_slots(conn):
         return "Teaching staff break rota slot not active in settings"
-    allowed_roles = role_priority_for_duty(code)
+    allowed_roles = role_priority_for_duty_with_settings(conn, code)
     active_roles = set()
     for row in conn.execute("SELECT initials, classification AS role FROM teachers").fetchall():
         active_roles.add(row["role"])
@@ -1074,7 +1097,7 @@ def duty_sort_key(slot: sqlite3.Row | tuple[int, str, str]) -> tuple:
         priority = 6
     elif "Isolation" in code:
         priority = 7
-    elif duty_is_optional(code):
+    elif duty_is_optional_for_conn(conn, code):
         priority = 99
     return (priority, week, ROTA_DAYS.index(day), DUTY_ORDER.get(code, 999))
 
@@ -1203,7 +1226,7 @@ def auto_assign_empty_slots(conn: sqlite3.Connection) -> dict:
             else:
                 eligible.append(cand)
         if not eligible:
-            if not duty_is_optional(code):
+            if not duty_is_optional_for_conn(conn, code):
                 issues.append(slot)
             continue
         if duty_is_lunch(code):
@@ -1212,7 +1235,7 @@ def auto_assign_empty_slots(conn: sqlite3.Connection) -> dict:
             eligible.sort(key=lambda cand: cand.get("sort", (999, cand["initials"])))
             chosen = eligible[0]
         if not chosen:
-            if not duty_is_optional(code):
+            if not duty_is_optional_for_conn(conn, code):
                 issues.append(slot)
             continue
         conn.execute(

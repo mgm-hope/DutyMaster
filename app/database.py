@@ -150,6 +150,7 @@ DEFAULT_RULES = [
     ("Tutor Pastoral Layers = Pastoral", "Pastoral Support, Room 90, and Isolation during Tutor Time are staffed by Pastoral department members where possible."),
     ("Period 4 Lunch Rules", "Lunch duty requires 7 staff total, at least 1 Pastoral member, ideally no more than 2 SLT, excludes staff teaching Period 4, and respects protected periods and part-time days."),
     ("Period 7 Detention = 2 Staff", "Period 7 detention duty requires exactly 2 staff."),
+    ("Period 7 Mode", "Period 7 duties are ignored by default. In Rules, you can switch them to SLT only or Pastoral only."),
     ("Break Duty Lead = SLT or Pastoral", "Break Duty Lead can only be assigned to SLT or Pastoral staff."),
     ("Even SLT Isolation Distribution", "SLT isolation duties should be spread as evenly as possible across participating SLT members."),
     ("Even Pastoral Distribution", "Pastoral staff should be spread evenly across Pastoral Support, Room 90, Isolation, late detention, and lunch pastoral duties."),
@@ -283,4 +284,12 @@ def seed_defaults(conn: sqlite3.Connection) -> None:
     conn.execute(
         "INSERT OR IGNORE INTO app_settings(key, value, last_updated) VALUES (?, ?, CURRENT_TIMESTAMP)",
         ("teacher_break_rota_slots", "6"),
+    )
+    conn.execute(
+        "INSERT OR IGNORE INTO app_settings(key, value, last_updated) VALUES (?, ?, CURRENT_TIMESTAMP)",
+        ("p7_detention_mode", "ignore"),
+    )
+    conn.execute(
+        "INSERT OR IGNORE INTO app_settings(key, value, last_updated) VALUES (?, ?, CURRENT_TIMESTAMP)",
+        ("p7_mode", "ignore"),
     )

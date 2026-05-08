@@ -649,6 +649,7 @@ def rules_page(request: Request):
         max_duties = get_setting(conn, "max_duties_per_week", "4")
         max_duties_day = get_setting(conn, "max_duties_per_day", "2")
         teacher_break_slots = get_setting(conn, "teacher_break_rota_slots", "6")
+        p7_mode = get_setting(conn, "p7_mode", get_setting(conn, "p7_detention_mode", "ignore"))
         exclusions = conn.execute(
             """
             SELECT id, staff_initials, week, day, reason, active, created_at
@@ -706,6 +707,7 @@ def rules_page(request: Request):
             max_duties=max_duties,
             max_duties_day=max_duties_day,
             teacher_break_slots=teacher_break_slots,
+            p7_mode=p7_mode,
             exclusions=exclusions,
             custom_rules=custom_rules,
             duty_scopes=duty_scopes,
@@ -738,6 +740,7 @@ async def rules_settings(
     max_duties_per_week: int = Form(...),
     max_duties_per_day: int = Form(2),
     teacher_break_rota_slots: int = Form(6),
+    p7_mode: str = Form("ignore"),
 ):
     redirect = _require_login(request)
     if redirect:
@@ -745,6 +748,7 @@ async def rules_settings(
     value = str(max(0, min(30, max_duties_per_week)))
     day_value = str(max(0, min(10, max_duties_per_day)))
     break_slots = str(max(0, min(10, teacher_break_rota_slots)))
+    period7_mode = p7_mode if p7_mode in {"ignore", "slt", "pastoral"} else "ignore"
     with _conn_context() as conn:
         create_throttled_autosave(conn, "Rules edit autosave")
         conn.execute(
@@ -771,10 +775,18 @@ async def rules_settings(
             """,
             (day_value, datetime.now().isoformat()),
         )
+        conn.execute(
+            """
+            INSERT INTO app_settings(key, value, last_updated)
+            VALUES ('p7_mode', ?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value, last_updated = excluded.last_updated
+            """,
+            (period7_mode, datetime.now().isoformat()),
+        )
         cleared = clear_inactive_teacher_break_slots(conn)
         conn.commit()
     clear_note = f" Cleared {cleared} inactive teacher break rota assignment(s)." if cleared else ""
-    _flash(request, f"Maximum duties set to {value} per week and {day_value} per day. Teaching staff break rota slots set to {break_slots}.{clear_note}")
+    _flash(request, f"Maximum duties set to {value} per week and {day_value} per day. Teaching staff break rota slots set to {break_slots}. Period 7 mode set to {period7_mode}.{clear_note}")
     return RedirectResponse("/rules", status_code=303)
 
 
