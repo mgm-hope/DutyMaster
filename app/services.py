@@ -478,6 +478,10 @@ def duty_is_optional_for_conn(conn: sqlite3.Connection, code: str) -> bool:
     return duty_is_optional(code) or (code.startswith("P7_") and p7_mode(conn) == "ignore")
 
 
+def duty_is_manual_fill_only_for_conn(conn: sqlite3.Connection, code: str) -> bool:
+    return "Room_90" in code and rule_active(conn, "Room 90 Manual Fill Only")
+
+
 def get_setting(conn: sqlite3.Connection, key: str, default: str) -> str:
     row = conn.execute("SELECT value FROM app_settings WHERE key = ?", (key,)).fetchone()
     return str(row["value"]) if row else default
@@ -942,6 +946,8 @@ def candidate_rejection_reason(
 def blank_duty_reason(conn: sqlite3.Connection, week: int, day: str, code: str) -> str:
     if code.startswith("P7_") and p7_mode(conn) == "ignore":
         return "Period 7 ignored in Rules"
+    if duty_is_manual_fill_only_for_conn(conn, code):
+        return "Room 90 manual fill only"
     if duty_is_optional(code):
         return "Room 90 optional"
     if code.startswith("Teacher_Break_Rota_") and int(code.rsplit("_", 1)[1]) > teacher_break_rota_slots(conn):
@@ -1242,6 +1248,8 @@ def auto_assign_empty_slots(conn: sqlite3.Connection) -> dict:
     for slot in sorted(empty_slots, key=lambda item: revised_slot_sort_key(conn, item)):
         week, day, code = slot["week"], slot["day"], slot["period"]
         if code not in active_codes:
+            continue
+        if duty_is_manual_fill_only_for_conn(conn, code):
             continue
         allowed_roles = role_priority_for_duty_with_settings(conn, code)
         balance_slt = (

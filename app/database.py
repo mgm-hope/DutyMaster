@@ -171,7 +171,7 @@ DEFAULT_RULES = [
     ("Lunch Fill Order", "After suitable teachers are used for lunch duty, fill remaining lunch spaces from ESLT, then Chaplaincy, then Admin, and finally SLT."),
     ("Lunch Off-Duty / Rest Protection", "During Period 4 split lunch, Pastoral allocation must preserve the intended rest/off-duty rotation across 4A, 4B, and 4C where possible."),
     ("Period 4A/4B/4C Staffing", "In Period 4A, 4B, and 4C, First Duty is SLT only. Pastoral Support, Isolation, and Rest Break are Pastoral only so Pastoral staff can rotate through support, isolation, and rest."),
-    ("Room 90 Optional", "Room 90 is the lowest-priority duty. Auto-assign may leave it blank and should not log it as an insufficient-staff problem."),
+    ("Room 90 Manual Fill Only", "Room 90 is manual fill only. Auto-assign skips Room 90, but staff can still be assigned manually from the Pre-Built Duty Events page."),
     ("Teacher Break Rota", "Add a teacher-only duty between Break and Period 3. Default is 6 staff, adjustable in Rules. Teaching staff can do this at most once per week, with subject grouping preferred."),
 ]
 
@@ -265,6 +265,18 @@ def _ensure_column(conn: sqlite3.Connection, table_name: str, column_name: str, 
 
 
 def seed_defaults(conn: sqlite3.Connection) -> None:
+    existing_manual_room_90 = conn.execute("SELECT 1 FROM rules WHERE name = ?", ("Room 90 Manual Fill Only",)).fetchone()
+    if existing_manual_room_90:
+        conn.execute("DELETE FROM rules WHERE name = ?", ("Room 90 Optional",))
+    else:
+        conn.execute(
+            "UPDATE rules SET name = ?, description = ? WHERE name = ?",
+            (
+                "Room 90 Manual Fill Only",
+                "Room 90 is manual fill only. Auto-assign skips Room 90, but staff can still be assigned manually from the Pre-Built Duty Events page.",
+                "Room 90 Optional",
+            ),
+        )
     conn.executemany(
         "INSERT OR IGNORE INTO classifications(name) VALUES (?)",
         [("Teacher",), ("HOF",), ("SLT",)],
