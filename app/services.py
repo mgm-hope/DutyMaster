@@ -1124,6 +1124,15 @@ def revised_slot_sort_key(conn: sqlite3.Connection, slot: sqlite3.Row) -> tuple:
 
 
 def choose_lunch_candidate(conn: sqlite3.Connection, eligible: list[dict], code: str, week: int, day: str) -> dict | None:
+    if code == "P4_Lunch_1":
+        eligible.sort(
+            key=lambda cand: (
+                staff_total_duty_count(conn, cand["initials"]),
+                previous_non_free_streak(conn, cand["initials"], week, day, code),
+                cand["initials"],
+            )
+        )
+        return eligible[0] if eligible else None
     additional_priority = {"ESLT": 0, "Chaplaincy": 1, "Admin": 2}
     additional = [cand for cand in eligible if cand["role"] in additional_priority]
     if additional:
