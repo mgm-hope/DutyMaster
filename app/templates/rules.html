@@ -22,9 +22,9 @@
             <input type="number" name="teacher_break_rota_slots" min="0" max="10" value="{{ teacher_break_slots }}">
         </label>
         <label>
-            Period 7 duties
+            Period 7
             <select name="p7_mode">
-                <option value="ignore" {% if p7_mode == "ignore" %}selected{% endif %}>Ignore all Period 7 by default</option>
+                <option value="ignore" {% if p7_mode == "ignore" %}selected{% endif %}>Ignore Period 7</option>
                 <option value="slt" {% if p7_mode == "slt" %}selected{% endif %}>Use SLT</option>
                 <option value="pastoral" {% if p7_mode == "pastoral" %}selected{% endif %}>Use Pastoral</option>
             </select>

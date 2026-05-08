@@ -540,7 +540,7 @@ def duty_scope_matches(code: str, scope: str) -> bool:
         "Period 5": ["P5_"],
         "Period 6": ["P6_"],
         "Period 7": ["P7_"],
-        "Isolation Duties": ["Tutor_Isolation", "P1_Isolation", "P2_Isolation", "Break_Isolation", "P3_Isolation", "P4A_Isolation", "P4B_Isolation", "P4C_Isolation", "P5_Isolation", "P6_Isolation", "P7_Isolation"],
+        "Isolation Duties": ["Tutor_Isolation", "P1_Isolation", "P2_Isolation", "Break_Isolation", "P3_Isolation", "P4A_Isolation", "P4B_Isolation", "P4C_Isolation", "P5_Isolation", "P6_Isolation"],
         "Lunch and Detention": ["P4_Lunch_", "Break_Late_Detention", "P7_Detention"],
         "Heavy Duties": ["Isolation", "Lunch", "Detention"],
     }
@@ -1455,7 +1455,7 @@ def build_master_style_workbook(conn: sqlite3.Connection) -> BytesIO:
         extra_codes = [
             "Gate", "Tutor_Isolation", "Break_Isolation",
             *[f"Teacher_Break_Rota_{index}" for index in range(1, teacher_break_rota_slots(conn) + 1)],
-            "P4A_Rest_Break", "P4B_Rest_Break", "P7_Isolation", "P7_Detention_1", "P7_Detention_2",
+            "P4A_Rest_Break", "P4B_Rest_Break", "P7_Detention_1", "P7_Detention_2",
         ]
         for code in extra_codes:
             for week in ROTA_WEEKS:

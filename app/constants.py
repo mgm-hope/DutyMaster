@@ -102,7 +102,6 @@ DUTY_SECTIONS = [
     ("Period 7", [
         ("P7_Homework_Club", "Homework Club"),
         ("P7_Detention_Drop_In", "Detention Drop-in"),
-        ("P7_Isolation", "Isolation"),
         ("P7_Detention_1", "Detention Duty 1"),
         ("P7_Detention_2", "Detention Duty 2"),
     ]),
