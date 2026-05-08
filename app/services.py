@@ -1030,7 +1030,15 @@ def clear_conflicting_p4_assignments(conn: sqlite3.Connection, initials: str, we
     return 0
 
 
-def assign_staff(conn: sqlite3.Connection, week: int, day: str, code: str, initials: str, role: str) -> int:
+def assign_staff(
+    conn: sqlite3.Connection,
+    week: int,
+    day: str,
+    code: str,
+    initials: str,
+    role: str,
+    enforce_rules: bool = True,
+) -> int:
     conflicting_rows: list[sqlite3.Row] = []
     if code.startswith("P4_Lunch_"):
         conflicting_rows = conn.execute(
@@ -1054,7 +1062,7 @@ def assign_staff(conn: sqlite3.Connection, week: int, day: str, code: str, initi
     cleared = 0
     if conflicting_rows:
         cleared = clear_conflicting_p4_assignments(conn, initials, week, day, code)
-    if not strict_assignment_allowed(conn, initials, role, week, day, code):
+    if enforce_rules and not strict_assignment_allowed(conn, initials, role, week, day, code):
         for row in conflicting_rows:
             conn.execute(
                 """
@@ -1068,11 +1076,15 @@ def assign_staff(conn: sqlite3.Connection, week: int, day: str, code: str, initi
         return -1
     conn.execute(
         """
-        UPDATE rota_assignments
-        SET staff_initials = ?, staff_type = ?, last_updated = ?
-        WHERE week = ? AND day = ? AND period = ?
+        INSERT INTO rota_assignments(week, day, period, staff_initials, staff_type, last_updated)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(week, day, period)
+        DO UPDATE SET
+            staff_initials = excluded.staff_initials,
+            staff_type = excluded.staff_type,
+            last_updated = excluded.last_updated
         """,
-        (initials, role, datetime.now().isoformat(), week, day, code),
+        (week, day, code, initials, role, datetime.now().isoformat()),
     )
     conn.commit()
     return cleared

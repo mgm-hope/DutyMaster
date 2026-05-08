@@ -961,7 +961,7 @@ async def manual_adjustment_assign(
     initials, role = staff_value.split("|", 1)
     with _conn_context() as conn:
         create_throttled_autosave(conn, "Manual adjustment autosave")
-        cleared = assign_staff(conn, week, day, period, initials, role)
+        cleared = assign_staff(conn, week, day, period, initials, role, enforce_rules=False)
     if cleared < 0:
         _flash(request, "That manual assignment would break an active rule, so the duty was left unchanged.")
         return RedirectResponse(f"/manual-adjustment?week={week}&day={day}&period={period}", status_code=303)
