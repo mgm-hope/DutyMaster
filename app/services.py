@@ -941,6 +941,28 @@ def slt_balance_sort_key(conn: sqlite3.Connection, initials: str, week: int, day
     )
 
 
+def duty_uses_pastoral_distribution(code: str) -> bool:
+    return duty_family(code) in {"Pastoral Support", "Isolation", "Late Detention", "Rest Break"}
+
+
+def pastoral_distribution_sort_key(conn: sqlite3.Connection, initials: str, week: int, day: str, code: str) -> tuple:
+    rows = conn.execute(
+        "SELECT period FROM rota_assignments WHERE staff_initials = ?",
+        (initials,),
+    ).fetchall()
+    family = duty_family(code)
+    pastoral_families = {"Pastoral Support", "Isolation", "Late Detention", "Rest Break"}
+    same_family_count = sum(1 for row in rows if duty_family(row["period"]) == family)
+    pastoral_duty_count = sum(1 for row in rows if duty_family(row["period"]) in pastoral_families)
+    return (
+        same_family_count,
+        pastoral_duty_count,
+        staff_week_duty_count(conn, initials, week),
+        staff_day_duty_count(conn, initials, week, day),
+        initials,
+    )
+
+
 def strict_assignment_allowed(
     conn: sqlite3.Connection,
     initials: str,
@@ -1089,6 +1111,17 @@ def available_staff(conn: sqlite3.Connection, week: int, day: str, code: str) ->
             staff.append({"initials": row["initials"], "name": row["full_name"], "role": row["category"], "subject": ""})
     if balance_slt:
         return sorted(staff, key=lambda item: slt_balance_sort_key(conn, item["initials"], week, day, code))
+    if duty_uses_pastoral_distribution(code):
+        return sorted(
+            staff,
+            key=lambda item: (
+                role_priority(item["role"]),
+                pastoral_distribution_sort_key(conn, item["initials"], week, day, code)
+                if item["role"] == "Pastoral"
+                else (999, 999, 999, 999, item["initials"]),
+                item["initials"],
+            ),
+        )
     return sorted(
         staff,
         key=lambda item: (
@@ -1379,14 +1412,24 @@ def auto_assign_empty_slots(conn: sqlite3.Connection) -> dict:
                     subject_score = 0 if cand.get("subject", "") in break_subjects else 1
                 if balance_slt:
                     sort_key = slt_balance_sort_key(conn, cand["initials"], week, day, code)
+                elif duty_uses_pastoral_distribution(code):
+                    sort_key = (
+                        role_priority(cand["role"]),
+                        pastoral_distribution_sort_key(conn, cand["initials"], week, day, code)
+                        if cand["role"] == "Pastoral"
+                        else (999, 999, 999, 999, cand["initials"]),
+                        -score,
+                        -tie_break,
+                        cand["initials"],
+                    )
                 else:
-                    sort_key = (subject_score, -score, -tie_break, cand["initials"])
+                    sort_key = (subject_score, role_priority(cand["role"]), -score, -tie_break, cand["initials"])
                 eligible.append({"sort": sort_key, **cand})
             else:
                 if balance_slt:
                     eligible.append({"sort": slt_balance_sort_key(conn, cand["initials"], week, day, code), **cand})
                 else:
-                    eligible.append(cand)
+                    eligible.append({"sort": (role_priority(cand["role"]), staff_total_duty_count(conn, cand["initials"]), cand["initials"]), **cand})
         if not eligible:
             if not duty_is_optional_for_conn(conn, code):
                 issues.append(slot)
