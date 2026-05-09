@@ -1446,7 +1446,14 @@ def auto_assign_empty_slots(conn: sqlite3.Connection) -> dict:
                         cand["initials"],
                     )
                 else:
-                    sort_key = (subject_score, duty_role_priority(conn, code, cand["role"]), -score, -tie_break, cand["initials"])
+                    sort_key = (
+                        subject_score,
+                        duty_role_priority(conn, code, cand["role"]),
+                        -score,
+                        -tie_break,
+                        staff_total_duty_count(conn, cand["initials"]),
+                        cand["initials"],
+                    )
                 eligible.append({"sort": sort_key, **cand})
             else:
                 if balance_slt:
@@ -1464,13 +1471,24 @@ def auto_assign_empty_slots(conn: sqlite3.Connection) -> dict:
                             pastoral_key[1],
                             pastoral_key[2],
                             pastoral_key[3],
-                            staff_total_duty_count(conn, cand["initials"]),
+                            0,
+                            0,
                             cand["initials"],
                         ),
                         **cand,
                     })
                 else:
-                    eligible.append({"sort": (duty_role_priority(conn, code, cand["role"]), staff_total_duty_count(conn, cand["initials"]), cand["initials"]), **cand})
+                    eligible.append({
+                        "sort": (
+                            1,
+                            duty_role_priority(conn, code, cand["role"]),
+                            0,
+                            0,
+                            staff_total_duty_count(conn, cand["initials"]),
+                            cand["initials"],
+                        ),
+                        **cand,
+                    })
         if not eligible:
             if not duty_is_optional_for_conn(conn, code):
                 issues.append(slot)
