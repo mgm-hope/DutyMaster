@@ -10,9 +10,13 @@
     <form method="get" action="/prebuilt/preview" class="inline-form">
         <button type="submit" class="secondary">Preview Auto-Assign</button>
     </form>
-    <form method="post" action="/prebuilt/clear-all" class="inline-form">
-        <input name="confirm" placeholder="Type CLEAR">
-        <button type="submit" class="secondary">Clear All Assignments</button>
+    <form method="post" action="/prebuilt/clear-auto" class="inline-form">
+        <input name="confirm" placeholder="Type AUTO">
+        <button type="submit" class="secondary">Clear Auto-Assigned</button>
+    </form>
+    <form method="post" action="/prebuilt/clear-manual" class="inline-form">
+        <input name="confirm" placeholder="Type MANUAL">
+        <button type="submit" class="secondary">Clear Manual Assignments</button>
     </form>
     {% if conflicts %}
     <form method="post" action="/prebuilt/repair-p4" class="inline-form">

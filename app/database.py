@@ -79,6 +79,7 @@ CREATE TABLE IF NOT EXISTS rota_assignments (
     period TEXT NOT NULL,
     staff_type TEXT,
     staff_initials TEXT,
+    assignment_source TEXT DEFAULT 'manual',
     last_updated TEXT,
     UNIQUE(week, day, period)
 );
@@ -205,6 +206,7 @@ def migrate_database(conn: sqlite3.Connection) -> None:
     _ensure_column(conn, "additional_staff", "status", "TEXT DEFAULT 'Active'")
     _ensure_column(conn, "additional_staff", "min_duties", "INTEGER DEFAULT 0")
     _ensure_column(conn, "additional_staff", "max_duties", "INTEGER")
+    _ensure_column(conn, "rota_assignments", "assignment_source", "TEXT DEFAULT 'manual'")
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS custom_rules (

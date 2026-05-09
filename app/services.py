@@ -346,7 +346,7 @@ def clear_inactive_teacher_break_slots(conn: sqlite3.Connection) -> int:
     cursor = conn.execute(
         """
         UPDATE rota_assignments
-        SET staff_initials = NULL, staff_type = NULL, last_updated = ?
+        SET staff_initials = NULL, staff_type = NULL, assignment_source = NULL, last_updated = ?
         WHERE period LIKE 'Teacher_Break_Rota_%'
           AND CAST(SUBSTR(period, 20) AS INTEGER) > ?
           AND staff_initials IS NOT NULL
@@ -1073,7 +1073,7 @@ def clear_conflicting_p4_assignments(conn: sqlite3.Connection, initials: str, we
     if code.startswith("P4_Lunch_"):
         cursor = conn.execute(
             """
-            UPDATE rota_assignments SET staff_initials = NULL, staff_type = NULL, last_updated = ?
+            UPDATE rota_assignments SET staff_initials = NULL, staff_type = NULL, assignment_source = NULL, last_updated = ?
             WHERE week = ? AND day = ? AND staff_initials = ?
               AND (period LIKE 'P4A_%' OR period LIKE 'P4B_%' OR period LIKE 'P4C_%')
             """,
@@ -1083,7 +1083,7 @@ def clear_conflicting_p4_assignments(conn: sqlite3.Connection, initials: str, we
     if code.startswith("P4A_") or code.startswith("P4B_") or code.startswith("P4C_"):
         cursor = conn.execute(
             """
-            UPDATE rota_assignments SET staff_initials = NULL, staff_type = NULL, last_updated = ?
+            UPDATE rota_assignments SET staff_initials = NULL, staff_type = NULL, assignment_source = NULL, last_updated = ?
             WHERE week = ? AND day = ? AND staff_initials = ? AND period LIKE 'P4_Lunch_%'
             """,
             (datetime.now().isoformat(), week, day, initials),
@@ -1100,6 +1100,7 @@ def assign_staff(
     initials: str,
     role: str,
     enforce_rules: bool = True,
+    assignment_source: str = "manual",
 ) -> int:
     conflicting_rows: list[sqlite3.Row] = []
     if code.startswith("P4_Lunch_"):
@@ -1129,7 +1130,7 @@ def assign_staff(
             conn.execute(
                 """
                 UPDATE rota_assignments
-                SET staff_initials = ?, staff_type = ?, last_updated = ?
+                SET staff_initials = ?, staff_type = ?, assignment_source = COALESCE(assignment_source, 'manual'), last_updated = ?
                 WHERE week = ? AND day = ? AND period = ?
                 """,
                 (row["staff_initials"], row["staff_type"], datetime.now().isoformat(), week, day, row["period"]),
@@ -1138,15 +1139,16 @@ def assign_staff(
         return -1
     conn.execute(
         """
-        INSERT INTO rota_assignments(week, day, period, staff_initials, staff_type, last_updated)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO rota_assignments(week, day, period, staff_initials, staff_type, assignment_source, last_updated)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(week, day, period)
         DO UPDATE SET
             staff_initials = excluded.staff_initials,
             staff_type = excluded.staff_type,
+            assignment_source = excluded.assignment_source,
             last_updated = excluded.last_updated
         """,
-        (week, day, code, initials, role, datetime.now().isoformat()),
+        (week, day, code, initials, role, assignment_source, datetime.now().isoformat()),
     )
     conn.commit()
     return cleared
@@ -1174,7 +1176,7 @@ def repair_p4_lunch_conflicts(conn: sqlite3.Connection) -> int:
         cursor = conn.execute(
             """
             UPDATE rota_assignments
-            SET staff_initials = NULL, staff_type = NULL, last_updated = ?
+            SET staff_initials = NULL, staff_type = NULL, assignment_source = NULL, last_updated = ?
             WHERE week = ? AND day = ? AND staff_initials = ?
               AND (period LIKE 'P4A_%' OR period LIKE 'P4B_%' OR period LIKE 'P4C_%')
             """,
@@ -1370,7 +1372,7 @@ def auto_assign_empty_slots(conn: sqlite3.Connection) -> dict:
         conn.execute(
             """
             UPDATE rota_assignments
-            SET staff_initials = ?, staff_type = ?, last_updated = ?
+            SET staff_initials = ?, staff_type = ?, assignment_source = 'auto', last_updated = ?
             WHERE week = ? AND day = ? AND period = ?
             """,
             (chosen["initials"], chosen["role"], datetime.now().isoformat(), week, day, code),

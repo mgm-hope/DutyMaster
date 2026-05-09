@@ -581,7 +581,7 @@ async def prebuilt_clear(request: Request, week: int = Form(...), day: str = For
     with _conn_context() as conn:
         create_throttled_autosave(conn, "Pre-built assignment autosave")
         conn.execute(
-            "UPDATE rota_assignments SET staff_initials = NULL, staff_type = NULL, last_updated = ? WHERE week = ? AND day = ? AND period = ?",
+            "UPDATE rota_assignments SET staff_initials = NULL, staff_type = NULL, assignment_source = NULL, last_updated = ? WHERE week = ? AND day = ? AND period = ?",
             (datetime.now().isoformat(), week, day, period),
         )
         conn.commit()
@@ -598,9 +598,55 @@ async def prebuilt_clear_all(request: Request, confirm: str = Form("")):
         return RedirectResponse("/prebuilt", status_code=303)
     with _conn_context() as conn:
         create_version_snapshot(conn, f"Before clear all {datetime.now().strftime('%d %b %H:%M')}", "Safety copy before clearing all assignments")
-        conn.execute("UPDATE rota_assignments SET staff_initials = NULL, staff_type = NULL, last_updated = ?", (datetime.now().isoformat(),))
+        conn.execute("UPDATE rota_assignments SET staff_initials = NULL, staff_type = NULL, assignment_source = NULL, last_updated = ?", (datetime.now().isoformat(),))
         conn.commit()
     _flash(request, "All duty assignments cleared.")
+    return RedirectResponse("/prebuilt", status_code=303)
+
+
+@app.post("/prebuilt/clear-auto")
+async def prebuilt_clear_auto(request: Request, confirm: str = Form("")):
+    redirect = _require_login(request)
+    if redirect:
+        return redirect
+    if confirm.strip().upper() != "AUTO":
+        _flash(request, "Type AUTO to confirm clearing auto-assigned duties.")
+        return RedirectResponse("/prebuilt", status_code=303)
+    with _conn_context() as conn:
+        create_version_snapshot(conn, f"Before clear auto {datetime.now().strftime('%d %b %H:%M')}", "Safety copy before clearing auto-assigned duties")
+        cursor = conn.execute(
+            """
+            UPDATE rota_assignments
+            SET staff_initials = NULL, staff_type = NULL, assignment_source = NULL, last_updated = ?
+            WHERE assignment_source = 'auto' AND staff_initials IS NOT NULL
+            """,
+            (datetime.now().isoformat(),),
+        )
+        conn.commit()
+    _flash(request, f"Cleared {cursor.rowcount} auto-assigned duty assignment(s).")
+    return RedirectResponse("/prebuilt", status_code=303)
+
+
+@app.post("/prebuilt/clear-manual")
+async def prebuilt_clear_manual(request: Request, confirm: str = Form("")):
+    redirect = _require_login(request)
+    if redirect:
+        return redirect
+    if confirm.strip().upper() != "MANUAL":
+        _flash(request, "Type MANUAL to confirm clearing manual assignments.")
+        return RedirectResponse("/prebuilt", status_code=303)
+    with _conn_context() as conn:
+        create_version_snapshot(conn, f"Before clear manual {datetime.now().strftime('%d %b %H:%M')}", "Safety copy before clearing manual assignments")
+        cursor = conn.execute(
+            """
+            UPDATE rota_assignments
+            SET staff_initials = NULL, staff_type = NULL, assignment_source = NULL, last_updated = ?
+            WHERE COALESCE(assignment_source, 'manual') = 'manual' AND staff_initials IS NOT NULL
+            """,
+            (datetime.now().isoformat(),),
+        )
+        conn.commit()
+    _flash(request, f"Cleared {cursor.rowcount} manual duty assignment(s).")
     return RedirectResponse("/prebuilt", status_code=303)
 
 
@@ -989,7 +1035,7 @@ async def manual_adjustment_clear(request: Request, week: int = Form(...), day: 
     with _conn_context() as conn:
         create_throttled_autosave(conn, "Manual adjustment autosave")
         conn.execute(
-            "UPDATE rota_assignments SET staff_initials = NULL, staff_type = NULL, last_updated = ? WHERE week = ? AND day = ? AND period = ?",
+            "UPDATE rota_assignments SET staff_initials = NULL, staff_type = NULL, assignment_source = NULL, last_updated = ? WHERE week = ? AND day = ? AND period = ?",
             (datetime.now().isoformat(), week, day, period),
         )
         conn.commit()
