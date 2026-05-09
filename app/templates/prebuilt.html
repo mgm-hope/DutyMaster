@@ -10,12 +10,10 @@
     <form method="get" action="/prebuilt/preview" class="inline-form">
         <button type="submit" class="secondary">Preview Auto-Assign</button>
     </form>
-    <form method="post" action="/prebuilt/clear-auto" class="inline-form">
-        <input name="confirm" placeholder="Type AUTO">
+    <form method="post" action="/prebuilt/clear-auto" class="inline-form" onsubmit="return confirm('Clear all auto-assigned duties from the visible Pre-Built grid?');">
         <button type="submit" class="secondary">Clear Auto-Assigned ({{ clear_counts.auto }})</button>
     </form>
-    <form method="post" action="/prebuilt/clear-manual" class="inline-form">
-        <input name="confirm" placeholder="Type MANUAL">
+    <form method="post" action="/prebuilt/clear-manual" class="inline-form" onsubmit="return confirm('Clear all manual Pre-Built assignments from the visible grid?');">
         <button type="submit" class="secondary">Clear Manual Assignments ({{ clear_counts.manual }})</button>
     </form>
     <p class="hint">

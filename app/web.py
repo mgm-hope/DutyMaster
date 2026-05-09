@@ -676,13 +676,10 @@ async def prebuilt_clear_all(request: Request, confirm: str = Form("")):
 
 
 @app.post("/prebuilt/clear-auto")
-async def prebuilt_clear_auto(request: Request, confirm: str = Form("")):
+async def prebuilt_clear_auto(request: Request):
     redirect = _require_login(request)
     if redirect:
         return redirect
-    if confirm.strip().upper() != "AUTO":
-        _flash(request, "Type AUTO to confirm clearing auto-assigned duties.")
-        return RedirectResponse("/prebuilt", status_code=303)
     with _conn_context() as conn:
         create_version_snapshot(conn, f"Before clear auto {datetime.now().strftime('%d %b %H:%M')}", "Safety copy before clearing auto-assigned duties")
         visible_where, params = _visible_assignment_where(conn)
@@ -702,13 +699,10 @@ async def prebuilt_clear_auto(request: Request, confirm: str = Form("")):
 
 
 @app.post("/prebuilt/clear-manual")
-async def prebuilt_clear_manual(request: Request, confirm: str = Form("")):
+async def prebuilt_clear_manual(request: Request):
     redirect = _require_login(request)
     if redirect:
         return redirect
-    if confirm.strip().upper() != "MANUAL":
-        _flash(request, "Type MANUAL to confirm clearing manual assignments.")
-        return RedirectResponse("/prebuilt", status_code=303)
     with _conn_context() as conn:
         create_version_snapshot(conn, f"Before clear manual {datetime.now().strftime('%d %b %H:%M')}", "Safety copy before clearing manual assignments")
         visible_where, params = _visible_assignment_where(conn)
