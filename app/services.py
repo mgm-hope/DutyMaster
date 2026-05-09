@@ -300,13 +300,32 @@ def reset_upload_data(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def existing_teacher_settings(conn: sqlite3.Connection) -> dict[str, dict]:
+    rows = conn.execute(
+        """
+        SELECT initials, full_name, protected_periods, classification, days_in_school, subject,
+               max_lunch_duties, min_duties, can_first_duty, exclude_from_algorithm
+        FROM teachers
+        """
+    ).fetchall()
+    return {row["initials"]: dict(row) for row in rows}
+
+
 def save_parsed_timetable(conn: sqlite3.Connection, parsed: dict) -> None:
+    previous_settings = existing_teacher_settings(conn)
     reset_upload_data(conn)
     conn.execute(
         "INSERT INTO timetable_meta (school_name, week1_label, week2_label, uploaded_at) VALUES (?, ?, ?, ?)",
         (parsed["school_name"], parsed["week1_label"], parsed["week2_label"], datetime.now().isoformat()),
     )
     for t in parsed["teachers"]:
+        previous = previous_settings.get(t["initials"], {})
+        protected_periods = previous.get("protected_periods", t["protected_periods"])
+        classification = previous.get("classification", t["classification"])
+        days_in_school = previous.get("days_in_school", t["days_in_school"])
+        days_out = (days_in_school or "1111111111").count("0")
+        max_load = FULL_TIME_TEACHING_LOAD - (DAILY_TEACHING_LOAD * days_out)
+        non_contact = max(0, max_load - float(t["total_lessons"] or 0))
         conn.execute(
             """
             INSERT INTO teachers (
@@ -317,10 +336,14 @@ def save_parsed_timetable(conn: sqlite3.Connection, parsed: dict) -> None:
             """,
             (
                 t["initials"], t["full_name"], t["is_teaching"], t["lessons_week1"], t["lessons_week2"],
-                t["total_lessons"], t["non_contact"], t["protected_periods"], t["classification"],
-                t["is_part_time"], t["days_in_school"], t.get("subject", ""), t.get("max_lunch_duties"),
-                t.get("min_duties", 0), t.get("can_first_duty", 0),
-                t.get("exclude_from_algorithm", 0), datetime.now().isoformat(),
+                t["total_lessons"], non_contact, protected_periods, classification,
+                1 if "0" in (days_in_school or "") else 0, days_in_school,
+                previous.get("subject", t.get("subject", "")),
+                previous.get("max_lunch_duties", t.get("max_lunch_duties")),
+                previous.get("min_duties", t.get("min_duties", 0)),
+                previous.get("can_first_duty", t.get("can_first_duty", 0)),
+                previous.get("exclude_from_algorithm", t.get("exclude_from_algorithm", 0)),
+                datetime.now().isoformat(),
             ),
         )
     for row in parsed["teacher_periods"]:
