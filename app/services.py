@@ -341,13 +341,24 @@ def ensure_duty_event_rows(conn: sqlite3.Connection) -> None:
                     "INSERT OR IGNORE INTO rota_assignments (week, day, period) VALUES (?, ?, ?)",
                     (week, day, code),
                 )
+    for obsolete_code in ("P4_Lunch_1", "P4_Lunch_7"):
+        conn.execute(
+            """
+            UPDATE rota_assignments
+            SET staff_initials = NULL, staff_type = NULL, assignment_source = NULL, last_updated = ?
+            WHERE period = ? AND staff_initials IS NOT NULL
+            """,
+            (datetime.now().isoformat(), obsolete_code),
+        )
+    placeholders = ", ".join("?" for _ in DUTY_LABELS)
     conn.execute(
-        """
+        f"""
         UPDATE rota_assignments
         SET staff_initials = NULL, staff_type = NULL, assignment_source = NULL, last_updated = ?
-        WHERE period = 'P4_Lunch_7' AND staff_initials IS NOT NULL
+        WHERE period NOT IN ({placeholders})
+          AND staff_initials IS NOT NULL
         """,
-        (datetime.now().isoformat(),),
+        (datetime.now().isoformat(), *DUTY_LABELS.keys()),
     )
     conn.commit()
 
@@ -424,6 +435,7 @@ def duty_family(code: str) -> str:
         ("Late_Detention", "Late Detention"),
         ("Duty_Lead", "Duty Lead"),
         ("Rest_Break", "Rest Break"),
+        ("Lunch_Duty", "Lunch Duty"),
         ("AOW", "Act of Worship"),
     ]
     for marker, family in family_markers:
@@ -597,7 +609,7 @@ def duty_is_heavy(code: str) -> bool:
 
 
 def duty_is_lunch(code: str) -> bool:
-    return code.startswith("P4_Lunch_")
+    return code.startswith("P4_Lunch_") or code in {"P4A_Lunch_Duty", "P4B_Lunch_Duty", "P4C_Lunch_Duty"}
 
 
 def p7_mode(conn: sqlite3.Connection) -> str:
@@ -731,7 +743,12 @@ def staff_total_duty_count(conn: sqlite3.Connection, initials: str) -> int:
 
 def staff_lunch_duty_count(conn: sqlite3.Connection, initials: str) -> int:
     row = conn.execute(
-        "SELECT COUNT(*) AS count FROM rota_assignments WHERE staff_initials = ? AND period LIKE 'P4_Lunch_%'",
+        """
+        SELECT COUNT(*) AS count
+        FROM rota_assignments
+        WHERE staff_initials = ?
+          AND (period LIKE 'P4_Lunch_%' OR period IN ('P4A_Lunch_Duty', 'P4B_Lunch_Duty', 'P4C_Lunch_Duty'))
+        """,
         (initials,),
     ).fetchone()
     return int(row["count"] or 0)
@@ -950,9 +967,9 @@ def role_priority_for_duty(code: str) -> list[str]:
     if code in {"P4A_First_Duty", "P4B_First_Duty", "P4C_First_Duty"}:
         return ["SLT"]
     if code in {
-        "P4A_Pastoral_Support", "P4A_Isolation", "P4A_Rest_Break",
-        "P4B_Pastoral_Support", "P4B_Isolation", "P4B_Rest_Break",
-        "P4C_Pastoral_Support", "P4C_Isolation", "P4C_Rest_Break",
+        "P4A_Lunch_Duty", "P4A_Pastoral_Support", "P4A_Isolation", "P4A_Rest_Break",
+        "P4B_Lunch_Duty", "P4B_Pastoral_Support", "P4B_Isolation", "P4B_Rest_Break",
+        "P4C_Lunch_Duty", "P4C_Pastoral_Support", "P4C_Isolation", "P4C_Rest_Break",
     }:
         return ["Pastoral"]
     if code == "Break_Duty_Lead":
@@ -965,8 +982,6 @@ def role_priority_for_duty(code: str) -> list[str]:
         return ["Pastoral", "SLT"]
     if "First_Duty" in code:
         return ["Pastoral", "SLT"]
-    if code == "P4_Lunch_1":
-        return ["Pastoral"]
     if code.startswith("P4_Lunch_"):
         return ["Teacher", "HOF", "ESLT", "Chaplaincy", "Admin", "SLT"]
     if code.startswith("P7_Detention"):
@@ -1352,11 +1367,13 @@ def revised_slot_sort_key(conn: sqlite3.Connection, slot: sqlite3.Row) -> tuple:
 
 
 def choose_lunch_candidate(conn: sqlite3.Connection, eligible: list[dict], code: str, week: int, day: str) -> dict | None:
-    if code == "P4_Lunch_1":
+    if code in {"P4A_Lunch_Duty", "P4B_Lunch_Duty", "P4C_Lunch_Duty"}:
         eligible.sort(
             key=lambda cand: (
+                pastoral_distribution_sort_key(conn, cand["initials"], week, day, code)
+                if cand["role"] == "Pastoral"
+                else (999, 999, 999, 999, cand["initials"]),
                 staff_total_duty_count(conn, cand["initials"]),
-                previous_non_free_streak(conn, cand["initials"], week, day, code),
                 cand["initials"],
             )
         )
@@ -1374,7 +1391,7 @@ def choose_lunch_candidate(conn: sqlite3.Connection, eligible: list[dict], code:
             )
         )
     teaching = [cand for cand in eligible if cand["source"] == "teacher"]
-    if code != "P4_Lunch_1" and additional:
+    if additional:
         return additional[0]
     if teaching:
         scored = []
@@ -1467,7 +1484,7 @@ def auto_assign_empty_slots(conn: sqlite3.Connection) -> dict:
                 allow_auto_p4_repair=duty_is_lunch(code),
             ):
                 continue
-            if duty_is_lunch(code) and cand["source"] == "additional" and cand["role"] not in {"ESLT", "Chaplaincy", "Admin"}:
+            if code.startswith("P4_Lunch_") and cand["source"] == "additional" and cand["role"] not in {"ESLT", "Chaplaincy", "Admin"}:
                 continue
             if not duty_is_lunch(code) and cand["source"] == "additional" and cand["role"] in {"ESLT", "Chaplaincy", "Admin"}:
                 continue
@@ -1755,8 +1772,8 @@ def build_master_style_workbook(conn: sqlite3.Connection) -> BytesIO:
             "Break_Duty_Lead": 31, "Break_Late_Detention": 34, "Break_Pastoral_Support": 37, "Break_Room_90": 39,
             "P3_First_Duty": 41, "P3_Pastoral_Support": 43, "P3_Room_90": 45, "P3_Isolation": 47,
             "P4A_First_Duty": 49, "P4A_Pastoral_Support": 51, "P4A_Isolation": 55,
-            "P4_Lunch_1": 57, "P4_Lunch_2": 59, "P4_Lunch_3": 60, "P4_Lunch_4": 61,
-            "P4_Lunch_5": 62, "P4_Lunch_6": 63,
+            "P4A_Lunch_Duty": 57, "P4_Lunch_2": 59, "P4_Lunch_3": 60, "P4_Lunch_4": 61,
+            "P4_Lunch_5": 62, "P4_Lunch_6": 63, "P4B_Lunch_Duty": 64,
             "P4B_First_Duty": 65, "P4B_Pastoral_Support": 67, "P4B_Isolation": 71,
             "P4C_First_Duty": 73, "P4C_Pastoral_Support": 75, "P4C_Isolation": 77, "P4C_Rest_Break": 80,
             "P5_First_Duty": 82, "P5_Pastoral_Support": 84, "P5_Room_90": 86, "P5_Isolation": 88,
@@ -1773,7 +1790,7 @@ def build_master_style_workbook(conn: sqlite3.Connection) -> BytesIO:
         extra_codes = [
             "Gate", "Tutor_Isolation", "Break_Isolation",
             *[f"Teacher_Break_Rota_{index}" for index in range(1, teacher_break_rota_slots(conn) + 1)],
-            "P4A_Rest_Break", "P4B_Rest_Break", "P7_Detention_1", "P7_Detention_2",
+            "P4A_Rest_Break", "P4B_Rest_Break", "P4C_Lunch_Duty", "P7_Detention_1", "P7_Detention_2",
         ]
         for code in extra_codes:
             for week in ROTA_WEEKS:

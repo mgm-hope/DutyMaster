@@ -61,7 +61,6 @@ DUTY_SECTIONS = [
         ("P3_Isolation", "Isolation"),
     ]),
     ("Period 4 Lunch", [
-        ("P4_Lunch_1", "Lunch Duty 1"),
         ("P4_Lunch_2", "Lunch Duty 2"),
         ("P4_Lunch_3", "Lunch Duty 3"),
         ("P4_Lunch_4", "Lunch Duty 4"),
@@ -70,18 +69,21 @@ DUTY_SECTIONS = [
     ]),
     ("Period 4A", [
         ("P4A_First_Duty", "First Duty"),
+        ("P4A_Lunch_Duty", "Lunch Duty"),
         ("P4A_Pastoral_Support", "Pastoral Support"),
         ("P4A_Isolation", "Isolation"),
         ("P4A_Rest_Break", "Rest Break"),
     ]),
     ("Period 4B", [
         ("P4B_First_Duty", "First Duty"),
+        ("P4B_Lunch_Duty", "Lunch Duty"),
         ("P4B_Pastoral_Support", "Pastoral Support"),
         ("P4B_Isolation", "Isolation"),
         ("P4B_Rest_Break", "Rest Break"),
     ]),
     ("Period 4C", [
         ("P4C_First_Duty", "First Duty"),
+        ("P4C_Lunch_Duty", "Lunch Duty"),
         ("P4C_Pastoral_Support", "Pastoral Support"),
         ("P4C_Isolation", "Isolation"),
         ("P4C_Rest_Break", "Rest Break"),

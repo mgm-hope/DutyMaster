@@ -149,7 +149,7 @@ DEFAULT_RULES = [
     ("Monday P6 = AOW", "Monday Period 6 is automatically Act of Worship for all staff unless they have a real class recorded in the imported timetable. AOW counts as teaching time."),
     ("Tutor First Duty = SLT", "First duty during Tutor Time must be SLT and must be distinct from assembly/AOW staff."),
     ("Tutor Pastoral Layers = Pastoral", "Pastoral Support, Room 90, and Isolation during Tutor Time are staffed by Pastoral department members where possible."),
-    ("Period 4 Lunch Rules", "Lunch duty requires 6 staff total, at least 1 Pastoral member, ideally no more than 2 SLT, excludes staff teaching Period 4, and respects protected periods and part-time days."),
+    ("Period 4 Lunch Rules", "Period 4 has five general lunch duty slots plus one Pastoral lunch duty inside each of 4A, 4B, and 4C. Lunch excludes staff teaching Period 4 and respects protected periods and part-time days."),
     ("Period 7 Detention = 2 Staff", "Period 7 detention duty requires exactly 2 staff."),
     ("Period 7 Mode", "Period 7 duties are ignored by default. In Rules, you can switch them to SLT only or Pastoral only."),
     ("Break Duty Lead = SLT or Pastoral", "Break Duty Lead can only be assigned to SLT or Pastoral staff."),
@@ -174,7 +174,7 @@ DEFAULT_RULES = [
     ("Period 4 Mutual Exclusion", "Staff assigned to Period 4 Lunch cannot also be assigned to 4A, 4B, or 4C duties on the same day, and vice versa."),
     ("Lunch Fill Order", "After suitable teachers are used for lunch duty, fill remaining lunch spaces from ESLT, then Chaplaincy, then Admin, and finally SLT."),
     ("Lunch Off-Duty / Rest Protection", "During Period 4 split lunch, Pastoral allocation must preserve the intended rest/off-duty rotation across 4A, 4B, and 4C where possible."),
-    ("Period 4A/4B/4C Staffing", "In Period 4A, 4B, and 4C, First Duty is SLT only. Pastoral Support, Isolation, and Rest Break are Pastoral only so Pastoral staff can rotate through support, isolation, and rest."),
+    ("Period 4A/4B/4C Staffing", "In Period 4A, 4B, and 4C, First Duty is SLT only. Lunch Duty, Pastoral Support, Isolation, and Rest Break are Pastoral only so Pastoral staff can rotate through lunch, support, isolation, and rest."),
     ("Room 90 Manual Fill Only", "Room 90 is manual fill only. Auto-assign skips Room 90, but staff can still be assigned manually from the Pre-Built Duty Events page."),
     ("Teacher Break Rota", "Add a teacher-only duty between Break and Period 3. Default is 6 staff, adjustable in Rules. Teaching staff can do this at most once per week, with subject grouping preferred."),
 ]
