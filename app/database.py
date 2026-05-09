@@ -168,6 +168,7 @@ DEFAULT_RULES = [
     ("Isolation = SLT or Pastoral Only", "Isolation duties can only be assigned to SLT or Pastoral staff."),
     ("Period 1 Isolation = SLT Only", "Period 1 Isolation is covered by SLT, not Pastoral. Only selected/participating SLT should be used."),
     ("First Duty Other Periods = SLT or Pastoral", "First Duty outside Tutor Time can be assigned to any available SLT or Pastoral member."),
+    ("Pastoral First Duty Preference", "Except in Period 1, First Duty should offer and auto-assign eligible Pastoral staff before SLT. Period 1 First Duty keeps SLT as the first preference."),
     ("Late Detention at Break = Pastoral", "Late Detention at Break is staffed by a Pastoral department member and should be distributed evenly if multiple Pastoral staff are available."),
     ("Period 4 Mutual Exclusion", "Staff assigned to Period 4 Lunch cannot also be assigned to 4A, 4B, or 4C duties on the same day, and vice versa."),
     ("Lunch Fill Order", "After suitable teachers are used for lunch duty, fill remaining lunch spaces from ESLT, then Chaplaincy, then Admin, and finally SLT."),

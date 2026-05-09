@@ -544,6 +544,13 @@ def role_priority(role: str) -> int:
     return {"Pastoral": 0, "SLT": 1, "HOF": 2, "Teacher": 3, "ESLT": 4, "Chaplaincy": 5, "Admin": 6}.get(role, 9)
 
 
+def duty_role_priority(conn: sqlite3.Connection, code: str, role: str) -> int:
+    allowed_roles = role_priority_for_duty_with_settings(conn, code)
+    if role in allowed_roles:
+        return allowed_roles.index(role)
+    return 99 + role_priority(role)
+
+
 def duty_is_heavy(code: str) -> bool:
     return "Isolation" in code or "Lunch" in code or "Detention" in code
 
@@ -891,6 +898,8 @@ def role_priority_for_duty(code: str) -> list[str]:
         return ["SLT"]
     if code in {"Tutor_1st_Duty", "Tutor_AOW", "P1_Isolation"}:
         return ["SLT"]
+    if code == "P1_First_Duty":
+        return ["SLT", "Pastoral"]
     if code in {"P4A_First_Duty", "P4B_First_Duty", "P4C_First_Duty"}:
         return ["SLT"]
     if code in {
@@ -1115,7 +1124,7 @@ def available_staff(conn: sqlite3.Connection, week: int, day: str, code: str) ->
         return sorted(
             staff,
             key=lambda item: (
-                role_priority(item["role"]),
+                duty_role_priority(conn, code, item["role"]),
                 pastoral_distribution_sort_key(conn, item["initials"], week, day, code)
                 if item["role"] == "Pastoral"
                 else (999, 999, 999, 999, item["initials"]),
@@ -1127,7 +1136,7 @@ def available_staff(conn: sqlite3.Connection, week: int, day: str, code: str) ->
         key=lambda item: (
             0 if break_subjects and item.get("subject", "") in break_subjects else 1,
             item.get("subject", ""),
-            role_priority(item["role"]),
+            duty_role_priority(conn, code, item["role"]),
             item["initials"],
         ),
     )
@@ -1419,7 +1428,7 @@ def auto_assign_empty_slots(conn: sqlite3.Connection) -> dict:
                         else (999, 999, 999, 999, cand["initials"])
                     )
                     sort_key = (
-                        role_priority(cand["role"]),
+                        duty_role_priority(conn, code, cand["role"]),
                         pastoral_key[0],
                         pastoral_key[1],
                         pastoral_key[2],
@@ -1429,7 +1438,7 @@ def auto_assign_empty_slots(conn: sqlite3.Connection) -> dict:
                         cand["initials"],
                     )
                 else:
-                    sort_key = (subject_score, role_priority(cand["role"]), -score, -tie_break, cand["initials"])
+                    sort_key = (subject_score, duty_role_priority(conn, code, cand["role"]), -score, -tie_break, cand["initials"])
                 eligible.append({"sort": sort_key, **cand})
             else:
                 if balance_slt:
@@ -1442,7 +1451,7 @@ def auto_assign_empty_slots(conn: sqlite3.Connection) -> dict:
                     )
                     eligible.append({
                         "sort": (
-                            role_priority(cand["role"]),
+                            duty_role_priority(conn, code, cand["role"]),
                             pastoral_key[0],
                             pastoral_key[1],
                             pastoral_key[2],
@@ -1453,7 +1462,7 @@ def auto_assign_empty_slots(conn: sqlite3.Connection) -> dict:
                         **cand,
                     })
                 else:
-                    eligible.append({"sort": (role_priority(cand["role"]), staff_total_duty_count(conn, cand["initials"]), cand["initials"]), **cand})
+                    eligible.append({"sort": (duty_role_priority(conn, code, cand["role"]), staff_total_duty_count(conn, cand["initials"]), cand["initials"]), **cand})
         if not eligible:
             if not duty_is_optional_for_conn(conn, code):
                 issues.append(slot)
