@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import secrets
 import shutil
@@ -384,6 +385,7 @@ def additional_staff(request: Request):
             """
             SELECT id, category, initials, full_name, is_full_time,
                    COALESCE(days_in_school, '1111111111') AS days_in_school,
+                   COALESCE(availability, '[]') AS availability,
                    is_archived, COALESCE(status, 'Active') AS status,
                    COALESCE(min_duties, 0) AS min_duties,
                    max_duties
@@ -391,7 +393,30 @@ def additional_staff(request: Request):
             ORDER BY is_archived, category, initials
             """
         ).fetchall()
-    return templates.TemplateResponse("additional_staff.html", _base_context(request, "Additional Staffing", staff=staff))
+    period_options = [
+        ("Tutor", "Tutor"),
+        ("1", "Period 1"),
+        ("2", "Period 2"),
+        ("Break", "Break"),
+        ("TeacherBreak", "Teaching Staff Break Rota"),
+        ("3", "Period 3"),
+        ("4", "Period 4 / Lunch"),
+        ("5", "Period 5"),
+        ("6", "Period 6"),
+        ("7", "Period 7"),
+    ]
+    staff_rows = []
+    for row in staff:
+        item = dict(row)
+        try:
+            item["period_availability"] = set(json.loads(item.get("availability") or "[]"))
+        except (TypeError, json.JSONDecodeError):
+            item["period_availability"] = set()
+        staff_rows.append(item)
+    return templates.TemplateResponse(
+        "additional_staff.html",
+        _base_context(request, "Additional Staffing", staff=staff_rows, period_options=period_options),
+    )
 
 
 @app.post("/additional-staff/add")
@@ -410,7 +435,7 @@ async def add_additional_staff(
             conn.execute(
                 """
                 INSERT INTO additional_staff(category, initials, full_name, is_full_time, days_in_school, availability, min_duties, max_duties, last_updated)
-                VALUES (?, ?, ?, 1, '1111111111', NULL, 0, NULL, ?)
+                VALUES (?, ?, ?, 1, '1111111111', '[]', 0, NULL, ?)
                 """,
                 (category, initials.strip().upper(), full_name.strip(), datetime.now().isoformat()),
             )
@@ -438,6 +463,7 @@ async def update_additional_availability(
     request: Request,
     staff_id: int = Form(...),
     days_in_school: str = Form(...),
+    periods_available: list[str] = Form([]),
     min_duties: int = Form(0),
     max_duties: str = Form(""),
 ):
@@ -446,15 +472,25 @@ async def update_additional_availability(
         return redirect
     days = "".join("1" if char == "1" else "0" for char in days_in_school)[:10].ljust(10, "1")
     max_limit = int(max_duties) if str(max_duties).strip() else None
+    allowed_periods = {"Tutor", "1", "2", "Break", "TeacherBreak", "3", "4", "5", "6", "7"}
+    period_list = [period for period in periods_available if period in allowed_periods]
     with _conn_context() as conn:
         create_throttled_autosave(conn, "Additional staffing edit autosave")
         conn.execute(
             """
             UPDATE additional_staff
-            SET days_in_school = ?, is_full_time = ?, min_duties = ?, max_duties = ?, last_updated = ?
+            SET days_in_school = ?, availability = ?, is_full_time = ?, min_duties = ?, max_duties = ?, last_updated = ?
             WHERE id = ?
             """,
-            (days, 0 if "0" in days else 1, max(0, min_duties), max_limit, datetime.now().isoformat(), staff_id),
+            (
+                days,
+                json.dumps(period_list),
+                0 if "0" in days else 1,
+                max(0, min_duties),
+                max_limit,
+                datetime.now().isoformat(),
+                staff_id,
+            ),
         )
         conn.commit()
     _flash(request, "Additional staff availability updated.")

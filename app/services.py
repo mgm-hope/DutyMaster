@@ -384,6 +384,26 @@ def duty_time_group(code: str) -> str:
     return code
 
 
+def event_to_availability_period(code: str) -> str | None:
+    group = duty_time_group(code)
+    mapping = {
+        "Tutor": "Tutor",
+        "P1": "1",
+        "P2": "2",
+        "Break": "Break",
+        "TeacherBreak": "TeacherBreak",
+        "P3": "3",
+        "P4_Lunch": "4",
+        "P4A": "4",
+        "P4B": "4",
+        "P4C": "4",
+        "P5": "5",
+        "P6": "6",
+        "P7": "7",
+    }
+    return mapping.get(group)
+
+
 def duty_family(code: str) -> str:
     family_markers = [
         ("Pastoral_Support", "Pastoral Support"),
@@ -494,7 +514,8 @@ def teacher_available(conn: sqlite3.Connection, initials: str, week: int, day: s
 def additional_available(conn: sqlite3.Connection, initials: str, week: int, day: str, code: str) -> bool:
     row = conn.execute(
         """
-        SELECT status, COALESCE(days_in_school, '1111111111') AS days_in_school
+        SELECT status, COALESCE(days_in_school, '1111111111') AS days_in_school,
+               COALESCE(availability, '[]') AS availability
         FROM additional_staff
         WHERE initials = ? AND COALESCE(is_archived, 0) = 0
         """,
@@ -505,6 +526,13 @@ def additional_available(conn: sqlite3.Connection, initials: str, week: int, day
     days = (row["days_in_school"] or "1111111111").ljust(10, "1")[:10]
     idx = (week - 1) * 5 + ROTA_DAYS.index(day)
     if days[idx] != "1":
+        return False
+    try:
+        periods = set(json.loads(row["availability"] or "[]"))
+    except (TypeError, json.JSONDecodeError):
+        periods = set()
+    requested_period = event_to_availability_period(code)
+    if requested_period and requested_period not in periods:
         return False
     return not same_time_assignment_exists(conn, initials, week, day, code)
 

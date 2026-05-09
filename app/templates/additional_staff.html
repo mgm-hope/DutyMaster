@@ -42,6 +42,15 @@
                     </label>
                     {% endfor %}
                 </div>
+                <div class="period-picker">
+                    <span class="week-label">Periods</span>
+                    {% for value, label in period_options %}
+                    <label class="day-toggle">
+                        <input type="checkbox" name="periods_available" value="{{ value }}" {% if value in s["period_availability"] %}checked{% endif %}>
+                        <span>{{ label }}</span>
+                    </label>
+                    {% endfor %}
+                </div>
                 <label>
                     Min duties
                     <input class="small" type="number" min="0" name="min_duties" value="{{ s['min_duties'] }}">
@@ -50,7 +59,7 @@
                     Max duties
                     <input class="small" type="number" min="0" name="max_duties" value="{{ s['max_duties'] if s['max_duties'] is not none else '' }}" placeholder="∞">
                 </label>
-                <button type="submit">Save days</button>
+                <button type="submit">Save availability</button>
             </form>
             <span class="muted">{{ "Full time" if s["is_full_time"] else "Part time" }}</span>
         </td>
