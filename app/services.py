@@ -482,19 +482,45 @@ def groups_conflict(existing_group: str, requested_group: str) -> bool:
     )
 
 
-def same_time_assignment_exists(conn: sqlite3.Connection, initials: str, week: int, day: str, code: str) -> bool:
+def same_time_assignment_exists(
+    conn: sqlite3.Connection,
+    initials: str,
+    week: int,
+    day: str,
+    code: str,
+    allow_auto_p4_repair: bool = False,
+) -> bool:
     current_group = duty_time_group(code)
     rows = conn.execute(
         """
-        SELECT period FROM rota_assignments
+        SELECT period, COALESCE(assignment_source, 'manual') AS assignment_source
+        FROM rota_assignments
         WHERE staff_initials = ? AND week = ? AND day = ?
         """,
         (initials, week, day),
     ).fetchall()
-    return any(groups_conflict(duty_time_group(row["period"]), current_group) for row in rows)
+    for row in rows:
+        existing_group = duty_time_group(row["period"])
+        if not groups_conflict(existing_group, current_group):
+            continue
+        if (
+            allow_auto_p4_repair
+            and (current_group == "P4_Lunch" or existing_group == "P4_Lunch")
+            and row["assignment_source"] == "auto"
+        ):
+            continue
+        return True
+    return False
 
 
-def teacher_available(conn: sqlite3.Connection, initials: str, week: int, day: str, code: str) -> bool:
+def teacher_available(
+    conn: sqlite3.Connection,
+    initials: str,
+    week: int,
+    day: str,
+    code: str,
+    allow_auto_p4_repair: bool = False,
+) -> bool:
     row = conn.execute(
         "SELECT days_in_school, COALESCE(exclude_from_algorithm, 0) AS exclude_from_algorithm FROM teachers WHERE initials = ?",
         (initials,),
@@ -519,10 +545,17 @@ def teacher_available(conn: sqlite3.Connection, initials: str, week: int, day: s
         ).fetchone()
         if busy:
             return False
-    return not same_time_assignment_exists(conn, initials, week, day, code)
+    return not same_time_assignment_exists(conn, initials, week, day, code, allow_auto_p4_repair)
 
 
-def additional_available(conn: sqlite3.Connection, initials: str, week: int, day: str, code: str) -> bool:
+def additional_available(
+    conn: sqlite3.Connection,
+    initials: str,
+    week: int,
+    day: str,
+    code: str,
+    allow_auto_p4_repair: bool = False,
+) -> bool:
     row = conn.execute(
         """
         SELECT status, COALESCE(days_in_school, '1111111111') AS days_in_school,
@@ -545,7 +578,7 @@ def additional_available(conn: sqlite3.Connection, initials: str, week: int, day
     requested_period = event_to_availability_period(code)
     if requested_period and requested_period not in periods:
         return False
-    return not same_time_assignment_exists(conn, initials, week, day, code)
+    return not same_time_assignment_exists(conn, initials, week, day, code, allow_auto_p4_repair)
 
 
 def role_priority(role: str) -> int:
@@ -994,6 +1027,7 @@ def strict_assignment_allowed(
     day: str,
     code: str,
     source: str | None = None,
+    allow_auto_p4_repair: bool = False,
 ) -> bool:
     if staff_excluded_on_day(conn, initials, week, day):
         return False
@@ -1006,12 +1040,12 @@ def strict_assignment_allowed(
     if source is None:
         source = "teacher" if conn.execute("SELECT 1 FROM teachers WHERE initials = ?", (initials,)).fetchone() else "additional"
     if source == "teacher":
-        if not teacher_available(conn, initials, week, day, code):
+        if not teacher_available(conn, initials, week, day, code, allow_auto_p4_repair):
             return False
         if duty_is_lunch(code) and teacher_lunch_limit_reached(conn, initials):
             return False
     else:
-        if not additional_available(conn, initials, week, day, code):
+        if not additional_available(conn, initials, week, day, code, allow_auto_p4_repair):
             return False
         if role in {"ESLT", "Chaplaincy", "Admin"} and not duty_is_lunch(code):
             return False
@@ -1422,7 +1456,16 @@ def auto_assign_empty_slots(conn: sqlite3.Connection) -> dict:
         eligible = []
         break_subjects = assigned_teacher_break_subjects(conn, week, day) if code.startswith("Teacher_Break_Rota_") else set()
         for cand in candidates:
-            if not strict_assignment_allowed(conn, cand["initials"], cand["role"], week, day, code, cand["source"]):
+            if not strict_assignment_allowed(
+                conn,
+                cand["initials"],
+                cand["role"],
+                week,
+                day,
+                code,
+                cand["source"],
+                allow_auto_p4_repair=duty_is_lunch(code),
+            ):
                 continue
             if duty_is_lunch(code) and cand["source"] == "additional" and cand["role"] not in {"ESLT", "Chaplaincy", "Admin"}:
                 continue
