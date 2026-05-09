@@ -184,17 +184,35 @@ def parse_timetable(xlsx_path: Path) -> dict:
     }
 
 
+def looks_like_subject_label(text: str) -> bool:
+    if not text:
+        return False
+    ignored = {"AM", "PM", "BR", "BR1", "Tutor", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"}
+    if text in ignored:
+        return False
+    if re.match(r"^[A-Z]{3}$", text):
+        return False
+    if re.search(r"\bWeek\s+\d\b", text, re.IGNORECASE):
+        return False
+    if re.search(r"\d{1,2}/\d{1,2}/\d{2,4}", text):
+        return False
+    if re.search(r"\d{1,2}:\d{2}", text):
+        return False
+    if re.match(r"^[A-Z][a-z]{2}\s+\d", text):
+        return False
+    return 2 <= len(text) <= 40
+
+
 def infer_subject_for_cell(ws, row: int, col: int) -> str:
-    ignored = {"", "AM", "PM", "BR", "BR1", "Tutor", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"}
     for look_col in range(max(1, col - 5), col):
         value = ws.cell(row=row, column=look_col).value
         text = str(value or "").strip()
-        if 2 <= len(text) <= 40 and text not in ignored and not re.match(r"^[A-Z]{3}$", text):
+        if looks_like_subject_label(text):
             return text
     for look_row in range(max(1, row - 8), row):
         value = ws.cell(row=look_row, column=1).value or ws.cell(row=look_row, column=2).value
         text = str(value or "").strip()
-        if 2 <= len(text) <= 40 and text not in ignored and not re.match(r"^[A-Z]{3}$", text):
+        if looks_like_subject_label(text):
             return text
     return ""
 
@@ -323,6 +341,8 @@ def save_parsed_timetable(conn: sqlite3.Connection, parsed: dict) -> None:
         protected_periods = previous.get("protected_periods", t["protected_periods"])
         classification = previous.get("classification", t["classification"])
         days_in_school = previous.get("days_in_school", t["days_in_school"])
+        previous_subject = previous.get("subject", "")
+        subject = previous_subject if looks_like_subject_label(str(previous_subject or "").strip()) else t.get("subject", "")
         days_out = (days_in_school or "1111111111").count("0")
         max_load = FULL_TIME_TEACHING_LOAD - (DAILY_TEACHING_LOAD * days_out)
         non_contact = max(0, max_load - float(t["total_lessons"] or 0))
@@ -338,7 +358,7 @@ def save_parsed_timetable(conn: sqlite3.Connection, parsed: dict) -> None:
                 t["initials"], t["full_name"], t["is_teaching"], t["lessons_week1"], t["lessons_week2"],
                 t["total_lessons"], non_contact, protected_periods, classification,
                 1 if "0" in (days_in_school or "") else 0, days_in_school,
-                previous.get("subject", t.get("subject", "")),
+                subject,
                 previous.get("max_lunch_duties", t.get("max_lunch_duties")),
                 previous.get("min_duties", t.get("min_duties", 0)),
                 previous.get("can_first_duty", t.get("can_first_duty", 0)),
