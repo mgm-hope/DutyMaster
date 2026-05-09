@@ -12,12 +12,16 @@
     </form>
     <form method="post" action="/prebuilt/clear-auto" class="inline-form">
         <input name="confirm" placeholder="Type AUTO">
-        <button type="submit" class="secondary">Clear Auto-Assigned</button>
+        <button type="submit" class="secondary">Clear Auto-Assigned ({{ clear_counts.auto }})</button>
     </form>
     <form method="post" action="/prebuilt/clear-manual" class="inline-form">
         <input name="confirm" placeholder="Type MANUAL">
-        <button type="submit" class="secondary">Clear Manual Assignments</button>
+        <button type="submit" class="secondary">Clear Manual Assignments ({{ clear_counts.manual }})</button>
     </form>
+    <p class="hint">
+        These buttons clear the visible Pre-Built duty grid only. Auto clears duties created by Auto-Assign;
+        Manual clears duties assigned from this Pre-Built page, including older assignments without a source label.
+    </p>
     {% if conflicts %}
     <form method="post" action="/prebuilt/repair-p4" class="inline-form">
         <button type="submit" class="secondary">Repair Period 4 Lunch Conflicts</button>

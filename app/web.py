@@ -85,6 +85,39 @@ def _conn_context() -> Iterator[sqlite3.Connection]:
         conn.close()
 
 
+def _visible_assignment_where(conn: sqlite3.Connection) -> tuple[str, tuple[str, ...]]:
+    codes = sorted(active_duty_codes(conn))
+    if not codes:
+        return "1 = 0", ()
+    placeholders = ", ".join("?" for _ in codes)
+    return f"period IN ({placeholders})", tuple(codes)
+
+
+def _prebuilt_clear_counts(conn: sqlite3.Connection) -> dict[str, int]:
+    visible_where, params = _visible_assignment_where(conn)
+    auto = conn.execute(
+        f"""
+        SELECT COUNT(*) AS count
+        FROM rota_assignments
+        WHERE staff_initials IS NOT NULL
+          AND assignment_source = 'auto'
+          AND {visible_where}
+        """,
+        params,
+    ).fetchone()["count"]
+    manual = conn.execute(
+        f"""
+        SELECT COUNT(*) AS count
+        FROM rota_assignments
+        WHERE staff_initials IS NOT NULL
+          AND COALESCE(assignment_source, 'prebuilt') IN ('manual', 'prebuilt')
+          AND {visible_where}
+        """,
+        params,
+    ).fetchone()["count"]
+    return {"auto": auto, "manual": manual}
+
+
 def _password_value() -> str:
     return os.getenv("DUTYMASTER_PASSWORD", "changeme123!")
 
@@ -538,6 +571,7 @@ def prebuilt(request: Request, week: int = 1, day: str = "Mon", period: str | No
         conflicts = get_p4_lunch_conflicts(conn)
         preview = preview_auto_assign(conn) if request.query_params.get("preview") == "1" else None
         duty_sections = active_duty_sections(conn)
+        clear_counts = _prebuilt_clear_counts(conn)
     return templates.TemplateResponse(
         "prebuilt.html",
         _base_context(
@@ -556,6 +590,7 @@ def prebuilt(request: Request, week: int = 1, day: str = "Mon", period: str | No
             candidates=candidates,
             conflicts=conflicts,
             preview=preview,
+            clear_counts=clear_counts,
         ),
     )
 
@@ -591,7 +626,7 @@ async def prebuilt_assign(
                 reason = candidate_rejection_reason(conn, initials, role, target_week, target_day, period)
                 skip_details.append(f"W{target_week} {target_day}: {reason or 'not available for this duty'}")
                 continue
-            result = assign_staff(conn, target_week, target_day, period, initials, role)
+            result = assign_staff(conn, target_week, target_day, period, initials, role, assignment_source="prebuilt")
             if result < 0:
                 skipped += 1
                 reason = candidate_rejection_reason(conn, initials, role, target_week, target_day, period)
@@ -650,13 +685,16 @@ async def prebuilt_clear_auto(request: Request, confirm: str = Form("")):
         return RedirectResponse("/prebuilt", status_code=303)
     with _conn_context() as conn:
         create_version_snapshot(conn, f"Before clear auto {datetime.now().strftime('%d %b %H:%M')}", "Safety copy before clearing auto-assigned duties")
+        visible_where, params = _visible_assignment_where(conn)
         cursor = conn.execute(
-            """
+            f"""
             UPDATE rota_assignments
             SET staff_initials = NULL, staff_type = NULL, assignment_source = NULL, last_updated = ?
-            WHERE assignment_source = 'auto' AND staff_initials IS NOT NULL
+            WHERE assignment_source = 'auto'
+              AND staff_initials IS NOT NULL
+              AND {visible_where}
             """,
-            (datetime.now().isoformat(),),
+            (datetime.now().isoformat(), *params),
         )
         conn.commit()
     _flash(request, f"Cleared {cursor.rowcount} auto-assigned duty assignment(s).")
@@ -673,13 +711,16 @@ async def prebuilt_clear_manual(request: Request, confirm: str = Form("")):
         return RedirectResponse("/prebuilt", status_code=303)
     with _conn_context() as conn:
         create_version_snapshot(conn, f"Before clear manual {datetime.now().strftime('%d %b %H:%M')}", "Safety copy before clearing manual assignments")
+        visible_where, params = _visible_assignment_where(conn)
         cursor = conn.execute(
-            """
+            f"""
             UPDATE rota_assignments
             SET staff_initials = NULL, staff_type = NULL, assignment_source = NULL, last_updated = ?
-            WHERE COALESCE(assignment_source, 'manual') = 'manual' AND staff_initials IS NOT NULL
+            WHERE COALESCE(assignment_source, 'prebuilt') IN ('manual', 'prebuilt')
+              AND staff_initials IS NOT NULL
+              AND {visible_where}
             """,
-            (datetime.now().isoformat(),),
+            (datetime.now().isoformat(), *params),
         )
         conn.commit()
     _flash(request, f"Cleared {cursor.rowcount} manual duty assignment(s).")
@@ -1054,7 +1095,7 @@ async def manual_adjustment_assign(
     initials, role = staff_value.split("|", 1)
     with _conn_context() as conn:
         create_throttled_autosave(conn, "Manual adjustment autosave")
-        cleared = assign_staff(conn, week, day, period, initials, role, enforce_rules=False)
+        cleared = assign_staff(conn, week, day, period, initials, role, enforce_rules=False, assignment_source="manual_adjustment")
     if cleared < 0:
         _flash(request, "That manual assignment would break an active rule, so the duty was left unchanged.")
         return RedirectResponse(f"/manual-adjustment?week={week}&day={day}&period={period}", status_code=303)
