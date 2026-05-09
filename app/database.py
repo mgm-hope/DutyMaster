@@ -161,6 +161,7 @@ DEFAULT_RULES = [
     ("One Duty Per Period", "During Tutor, Periods 1, 2, 3, 5, and 6, a staff member can only be assigned to one duty within that period. Period 4 lunch and 4A/4B/4C use the separate lunch clash rules."),
     ("Part-Time Day Protection", "Staff cannot be assigned duties on days they are marked out of school."),
     ("Respect Protected Periods", "Teachers must keep their personal protected-period allowance from Teaching Loads where possible."),
+    ("SLT Last Free Period Protection", "Auto-assign avoids using an SLT teacher's final free period of the day when another eligible staff member can cover the duty. If every eligible option would leave the duty blank, the SLT teacher can still be used."),
     ("Max Duties Per Week", "No staff member should exceed the configured maximum duties per week where possible."),
     ("No Consecutive Heavy Duties", "Avoid assigning Isolation, Lunch, and Detention heavy duties to the same person repeatedly or back-to-back where possible."),
     ("Trained Staff Only for Isolation", "Isolation should only be assigned to staff marked/understood as suitable for isolation duty."),

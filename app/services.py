@@ -728,6 +728,14 @@ def teacher_free_periods_for_day(conn: sqlite3.Connection, initials: str, week: 
     return DAILY_TEACHING_LOAD - teaching - staff_day_duty_count(conn, initials, week, day)
 
 
+def would_use_slt_teacher_last_free_period(conn: sqlite3.Connection, candidate: dict, week: int, day: str) -> bool:
+    return (
+        candidate.get("source") == "teacher"
+        and candidate.get("role") == "SLT"
+        and teacher_free_periods_for_day(conn, candidate["initials"], week, day) <= 1
+    )
+
+
 def teacher_lunch_limit_reached(conn: sqlite3.Connection, initials: str) -> bool:
     row = conn.execute("SELECT max_lunch_duties FROM teachers WHERE initials = ?", (initials,)).fetchone()
     if not row or row["max_lunch_duties"] is None:
@@ -813,8 +821,6 @@ def previous_non_free_streak(conn: sqlite3.Connection, initials: str, week: int,
 def teacher_assignment_score(conn: sqlite3.Connection, initials: str, week: int, day: str, code: str) -> tuple[float, float]:
     remaining = teacher_free_periods_remaining(conn, initials)
     score = 100 + (10 * remaining)
-    if teacher_free_periods_for_day(conn, initials, week, day) <= 1:
-        score -= 1
     tie_break = score - previous_non_free_streak(conn, initials, week, day, code)
     return score, tie_break
 
@@ -1493,6 +1499,11 @@ def auto_assign_empty_slots(conn: sqlite3.Connection) -> dict:
             if not duty_is_optional_for_conn(conn, code):
                 issues.append(slot)
             continue
+        if rule_active(conn, "SLT Last Free Period Protection"):
+            protected = [cand for cand in eligible if would_use_slt_teacher_last_free_period(conn, cand, week, day)]
+            unprotected = [cand for cand in eligible if cand not in protected]
+            if protected and unprotected:
+                eligible = unprotected
         if duty_is_lunch(code):
             chosen = choose_lunch_candidate(conn, eligible, code, week, day)
         else:
