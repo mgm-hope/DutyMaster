@@ -278,6 +278,17 @@ def seed_defaults(conn: sqlite3.Connection) -> None:
                 "Room 90 Optional",
             ),
         )
+    conn.execute(
+        """
+        UPDATE rules
+        SET description = ?
+        WHERE name = ? AND description LIKE '%Room 90%'
+        """,
+        (
+            "Pastoral Support and Isolation prefer Pastoral staff then SLT. Room 90 is handled separately by the Room 90 Manual Fill Only rule.",
+            "Pastoral Roles",
+        ),
+    )
     conn.executemany(
         "INSERT OR IGNORE INTO classifications(name) VALUES (?)",
         [("Teacher",), ("HOF",), ("SLT",)],

@@ -645,7 +645,18 @@ def rules_page(request: Request):
     if redirect:
         return redirect
     with _conn_context() as conn:
-        rules = conn.execute("SELECT id, name, description, active FROM rules ORDER BY id").fetchall()
+        rules = conn.execute(
+            """
+            SELECT id, name, description, active
+            FROM rules
+            ORDER BY
+                CASE
+                    WHEN name = 'Room 90 Manual Fill Only' THEN 0
+                    ELSE 1
+                END,
+                id
+            """
+        ).fetchall()
         max_duties = get_setting(conn, "max_duties_per_week", "4")
         max_duties_day = get_setting(conn, "max_duties_per_day", "2")
         teacher_break_slots = get_setting(conn, "teacher_break_rota_slots", "6")
