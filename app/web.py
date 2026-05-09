@@ -118,6 +118,46 @@ def _prebuilt_clear_counts(conn: sqlite3.Connection) -> dict[str, int]:
     return {"auto": auto, "manual": manual}
 
 
+STAFF_TIMETABLE_COLUMNS = [
+    ("Tutor", "Tutor"),
+    ("1", "Period 1"),
+    ("2", "Period 2"),
+    ("Break", "Break"),
+    ("TeacherBreak", "Teacher Break"),
+    ("3", "Period 3"),
+    ("4", "Period 4 / Lunch"),
+    ("5", "Period 5"),
+    ("6", "Period 6"),
+    ("7", "Period 7"),
+]
+
+
+def _staff_timetable_group_for_duty(code: str) -> str:
+    if code.startswith("Tutor_"):
+        return "Tutor"
+    if code.startswith("P1_"):
+        return "1"
+    if code.startswith("P2_"):
+        return "2"
+    if code.startswith("Break_"):
+        return "Break"
+    if code.startswith("Teacher_Break_Rota_"):
+        return "TeacherBreak"
+    if code.startswith("P3_"):
+        return "3"
+    if code.startswith("P4"):
+        return "4"
+    if code.startswith("P5_"):
+        return "5"
+    if code.startswith("P6_"):
+        return "6"
+    if code.startswith("P7_"):
+        return "7"
+    if code == "Gate":
+        return "Tutor"
+    return "Other"
+
+
 def _password_value() -> str:
     return os.getenv("DUTYMASTER_PASSWORD", "changeme123!")
 
@@ -1112,6 +1152,94 @@ async def manual_adjustment_clear(request: Request, week: int = Form(...), day: 
         conn.commit()
     _flash(request, "Manual assignment cleared.")
     return RedirectResponse(f"/manual-adjustment?week={week}&day={day}&period={period}", status_code=303)
+
+
+@app.get("/staff-timetable", response_class=HTMLResponse)
+def staff_timetable(request: Request, group: str = "Teacher", staff: str = ""):
+    redirect = _require_login(request)
+    if redirect:
+        return redirect
+    group_options = ["All", "Teacher", "HOF", "SLT", "Pastoral", "ESLT", "Chaplaincy", "Admin"]
+    if group not in group_options:
+        group = "Teacher"
+    with _conn_context() as conn:
+        people = []
+        for row in conn.execute(
+            """
+            SELECT initials, COALESCE(full_name, initials) AS name, classification AS role, 'teacher' AS source
+            FROM teachers
+            ORDER BY classification, initials
+            """
+        ).fetchall():
+            if group in {"All", row["role"]}:
+                people.append(dict(row))
+        for row in conn.execute(
+            """
+            SELECT initials, full_name AS name, category AS role, 'additional' AS source
+            FROM additional_staff
+            WHERE COALESCE(is_archived, 0) = 0
+            ORDER BY category, initials
+            """
+        ).fetchall():
+            if group in {"All", row["role"]}:
+                people.append(dict(row))
+        if not staff and people:
+            staff = people[0]["initials"]
+        selected = next((person for person in people if person["initials"] == staff), None)
+        timetable = {}
+        duty_rows = []
+        teaching_rows = []
+        for week in ROTA_WEEKS:
+            for day in ROTA_DAYS:
+                for code, _label in STAFF_TIMETABLE_COLUMNS:
+                    timetable[f"{week}:{day}:{code}"] = []
+        if selected:
+            if selected["source"] == "teacher":
+                teaching_rows = conn.execute(
+                    """
+                    SELECT week, day, period
+                    FROM teacher_periods
+                    WHERE teacher_initials = ?
+                    ORDER BY week, day, period
+                    """,
+                    (staff,),
+                ).fetchall()
+                for row in teaching_rows:
+                    key = f"{row['week']}:{row['day']}:{row['period']}"
+                    if key in timetable:
+                        timetable[key].append({"kind": "Teaching", "label": "Teaching"})
+            duty_rows = conn.execute(
+                """
+                SELECT week, day, period, staff_type
+                FROM rota_assignments
+                WHERE staff_initials = ?
+                ORDER BY week,
+                         CASE day WHEN 'Mon' THEN 1 WHEN 'Tue' THEN 2 WHEN 'Wed' THEN 3 WHEN 'Thu' THEN 4 ELSE 5 END,
+                         period
+                """,
+                (staff,),
+            ).fetchall()
+            for row in duty_rows:
+                group_code = _staff_timetable_group_for_duty(row["period"])
+                key = f"{row['week']}:{row['day']}:{group_code}"
+                if key in timetable:
+                    timetable[key].append({"kind": "Duty", "label": DUTY_LABELS.get(row["period"], row["period"])})
+        summary = {"teaching": len(teaching_rows), "duties": len(duty_rows)}
+    return templates.TemplateResponse(
+        "staff_timetable.html",
+        _base_context(
+            request,
+            "Staff Timetable",
+            group_options=group_options,
+            selected_group=group,
+            people=people,
+            selected=selected,
+            selected_staff=staff,
+            columns=STAFF_TIMETABLE_COLUMNS,
+            timetable=timetable,
+            summary=summary,
+        ),
+    )
 
 
 @app.get("/proposed", response_class=HTMLResponse)

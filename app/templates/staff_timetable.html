@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Staff Timetable</h2>
+
+<section class="panel">
+    <h3>Select staff member</h3>
+    <form method="get" action="/staff-timetable" class="inline-form">
+        <label>
+            Group
+            <select name="group" onchange="this.form.submit()">
+                {% for option in group_options %}
+                <option value="{{ option }}" {% if option == selected_group %}selected{% endif %}>{{ option }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>
+            Staff
+            <select name="staff">
+                {% for person in people %}
+                <option value="{{ person.initials }}" {% if person.initials == selected_staff %}selected{% endif %}>
+                    {{ person.initials }} - {{ person.name }} ({{ person.role }})
+                </option>
+                {% endfor %}
+            </select>
+        </label>
+        <button type="submit">Show timetable</button>
+    </form>
+</section>
+
+{% if selected %}
+<section class="summary-grid">
+    <div class="summary-card">
+        <span class="summary-label">Selected staff</span>
+        <strong>{{ selected.initials }}</strong>
+        <span>{{ selected.name }} · {{ selected.role }}</span>
+    </div>
+    <div class="summary-card">
+        <span class="summary-label">Teaching entries</span>
+        <strong>{{ summary.teaching }}</strong>
+        <span>Imported timetable periods</span>
+    </div>
+    <div class="summary-card">
+        <span class="summary-label">Duty entries</span>
+        <strong>{{ summary.duties }}</strong>
+        <span>Current rota assignments</span>
+    </div>
+</section>
+
+{% for week in weeks %}
+<section class="panel">
+    <h3>Week {{ week }}</h3>
+    <table class="rota-table staff-timetable-table">
+        <tr>
+            <th>Day</th>
+            {% for code, label in columns %}
+            <th>{{ label }}</th>
+            {% endfor %}
+        </tr>
+        {% for day in days %}
+        <tr>
+            <th>{{ day }}</th>
+            {% for code, label in columns %}
+            {% set cell_key = week ~ ":" ~ day ~ ":" ~ code %}
+            {% set entries = timetable.get(cell_key, []) %}
+            <td class="{% if entries %}has-duty{% endif %}">
+                {% if entries %}
+                    {% for entry in entries %}
+                    <div class="staff-timetable-entry {{ 'teaching-entry' if entry.kind == 'Teaching' else 'duty-entry' }}">
+                        <span>{{ entry.kind }}</span>
+                        <strong>{{ entry.label }}</strong>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <span class="muted">Free</span>
+                {% endif %}
+            </td>
+            {% endfor %}
+        </tr>
+        {% endfor %}
+    </table>
+</section>
+{% endfor %}
+{% else %}
+<section class="panel">
+    <div class="empty-state">No staff found for this group yet.</div>
+</section>
+{% endif %}
+{% endblock %}
