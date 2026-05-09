@@ -341,6 +341,14 @@ def ensure_duty_event_rows(conn: sqlite3.Connection) -> None:
                     "INSERT OR IGNORE INTO rota_assignments (week, day, period) VALUES (?, ?, ?)",
                     (week, day, code),
                 )
+    conn.execute(
+        """
+        UPDATE rota_assignments
+        SET staff_initials = NULL, staff_type = NULL, assignment_source = NULL, last_updated = ?
+        WHERE period = 'P4_Lunch_7' AND staff_initials IS NOT NULL
+        """,
+        (datetime.now().isoformat(),),
+    )
     conn.commit()
 
 
@@ -1676,7 +1684,7 @@ def build_master_style_workbook(conn: sqlite3.Connection) -> BytesIO:
             "P3_First_Duty": 41, "P3_Pastoral_Support": 43, "P3_Room_90": 45, "P3_Isolation": 47,
             "P4A_First_Duty": 49, "P4A_Pastoral_Support": 51, "P4A_Isolation": 55,
             "P4_Lunch_1": 57, "P4_Lunch_2": 59, "P4_Lunch_3": 60, "P4_Lunch_4": 61,
-            "P4_Lunch_5": 62, "P4_Lunch_6": 63, "P4_Lunch_7": 64,
+            "P4_Lunch_5": 62, "P4_Lunch_6": 63,
             "P4B_First_Duty": 65, "P4B_Pastoral_Support": 67, "P4B_Isolation": 71,
             "P4C_First_Duty": 73, "P4C_Pastoral_Support": 75, "P4C_Isolation": 77, "P4C_Rest_Break": 80,
             "P5_First_Duty": 82, "P5_Pastoral_Support": 84, "P5_Room_90": 86, "P5_Isolation": 88,

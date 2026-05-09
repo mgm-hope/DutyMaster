@@ -67,7 +67,6 @@ DUTY_SECTIONS = [
         ("P4_Lunch_4", "Lunch Duty 4"),
         ("P4_Lunch_5", "Lunch Duty 5"),
         ("P4_Lunch_6", "Lunch Duty 6"),
-        ("P4_Lunch_7", "Lunch Duty 7"),
     ]),
     ("Period 4A", [
         ("P4A_First_Duty", "First Duty"),

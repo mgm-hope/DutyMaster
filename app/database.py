@@ -149,7 +149,7 @@ DEFAULT_RULES = [
     ("Monday P6 = AOW", "Monday Period 6 is automatically Act of Worship for all staff unless they have a real class recorded in the imported timetable. AOW counts as teaching time."),
     ("Tutor First Duty = SLT", "First duty during Tutor Time must be SLT and must be distinct from assembly/AOW staff."),
     ("Tutor Pastoral Layers = Pastoral", "Pastoral Support, Room 90, and Isolation during Tutor Time are staffed by Pastoral department members where possible."),
-    ("Period 4 Lunch Rules", "Lunch duty requires 7 staff total, at least 1 Pastoral member, ideally no more than 2 SLT, excludes staff teaching Period 4, and respects protected periods and part-time days."),
+    ("Period 4 Lunch Rules", "Lunch duty requires 6 staff total, at least 1 Pastoral member, ideally no more than 2 SLT, excludes staff teaching Period 4, and respects protected periods and part-time days."),
     ("Period 7 Detention = 2 Staff", "Period 7 detention duty requires exactly 2 staff."),
     ("Period 7 Mode", "Period 7 duties are ignored by default. In Rules, you can switch them to SLT only or Pastoral only."),
     ("Break Duty Lead = SLT or Pastoral", "Break Duty Lead can only be assigned to SLT or Pastoral staff."),
