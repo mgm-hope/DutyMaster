@@ -31,6 +31,8 @@ CREATE TABLE IF NOT EXISTS teachers (
     days_in_school TEXT DEFAULT '1111111111',
     subject TEXT DEFAULT '',
     max_lunch_duties INTEGER,
+    min_duties INTEGER DEFAULT 0,
+    can_first_duty INTEGER DEFAULT 0,
     exclude_from_algorithm INTEGER DEFAULT 0,
     last_updated TEXT
 );
@@ -170,6 +172,7 @@ DEFAULT_RULES = [
     ("Period 1 Isolation = SLT Only", "Period 1 Isolation is covered by SLT, not Pastoral. Only selected/participating SLT should be used."),
     ("First Duty Other Periods = SLT or Pastoral", "First Duty outside Tutor Time can be assigned to any available SLT or Pastoral member."),
     ("Pastoral First Duty Preference", "Except in Period 1, First Duty should offer and auto-assign eligible Pastoral staff before SLT. Period 1 First Duty keeps SLT as the first preference."),
+    ("Teaching Staff Can Do First Duty", "Teachers marked 'Can do 1st Duty' in Teaching Loads can be considered for Period 2, 3, 5, and 6 First Duty after eligible Pastoral and SLT staff."),
     ("Late Detention at Break = Pastoral", "Late Detention at Break is staffed by a Pastoral department member and should be distributed evenly if multiple Pastoral staff are available."),
     ("Period 4 Mutual Exclusion", "Staff assigned to Period 4 Lunch cannot also be assigned to 4A, 4B, or 4C duties on the same day, and vice versa."),
     ("Lunch Fill Order", "After suitable teachers are used for lunch duty, fill remaining lunch spaces from ESLT, then Chaplaincy, then Admin, and finally SLT."),
@@ -202,6 +205,8 @@ def migrate_database(conn: sqlite3.Connection) -> None:
     _ensure_column(conn, "teachers", "days_in_school", "TEXT DEFAULT '1111111111'")
     _ensure_column(conn, "teachers", "subject", "TEXT DEFAULT ''")
     _ensure_column(conn, "teachers", "max_lunch_duties", "INTEGER")
+    _ensure_column(conn, "teachers", "min_duties", "INTEGER DEFAULT 0")
+    _ensure_column(conn, "teachers", "can_first_duty", "INTEGER DEFAULT 0")
     _ensure_column(conn, "teachers", "exclude_from_algorithm", "INTEGER DEFAULT 0")
     _ensure_column(conn, "additional_staff", "days_in_school", "TEXT DEFAULT '1111111111'")
     _ensure_column(conn, "additional_staff", "is_archived", "INTEGER DEFAULT 0")

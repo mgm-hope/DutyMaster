@@ -2,7 +2,7 @@
 {% block content %}
 <h2>Teaching Loads</h2>
 <table>
-    <tr><th>Initials</th><th>Name</th><th>Lessons</th><th>Protected</th><th>Available</th><th>Class</th><th>Subject / Faculty</th><th>Max lunch duties</th><th>Exclude</th><th>Days in school</th><th></th></tr>
+    <tr><th>Initials</th><th>Name</th><th>Lessons</th><th>Protected</th><th>Available</th><th>Class</th><th>Subject / Faculty</th><th>Min duties</th><th>Max lunch duties</th><th>Can do 1st Duty</th><th>Exclude</th><th>Days in school</th><th></th></tr>
     {% for t in teachers %}
     {% set days_pattern = (t["days_in_school"] or "1111111111") %}
     {% set days_out = days_pattern.count("0") %}
@@ -27,7 +27,14 @@
             </select>
         </td>
         <td><input form="{{ form_id }}" name="subject" value="{{ t['subject'] }}" placeholder="e.g. English"></td>
+        <td><input form="{{ form_id }}" class="small" type="number" min="0" name="min_duties" value="{{ t['min_duties'] }}"></td>
         <td><input form="{{ form_id }}" class="small" type="number" min="0" name="max_lunch_duties" value="{{ t['max_lunch_duties'] if t['max_lunch_duties'] is not none else '' }}" placeholder="∞"></td>
+        <td>
+            <label class="check-line">
+                <input form="{{ form_id }}" type="checkbox" name="can_first_duty" value="1" {% if t["can_first_duty"] %}checked{% endif %}>
+                <span>Can do 1st Duty</span>
+            </label>
+        </td>
         <td>
             <label class="check-line">
                 <input form="{{ form_id }}" type="checkbox" name="exclude_from_algorithm" value="1" {% if t["exclude_from_algorithm"] %}checked{% endif %}>

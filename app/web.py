@@ -380,6 +380,8 @@ def teaching_loads(request: Request):
                        COALESCE(t.days_in_school, '1111111111') AS days_in_school,
                        COALESCE(t.subject, '') AS subject,
                        t.max_lunch_duties,
+                       COALESCE(t.min_duties, 0) AS min_duties,
+                       COALESCE(t.can_first_duty, 0) AS can_first_duty,
                        COALESCE(t.exclude_from_algorithm, 0) AS exclude_from_algorithm
                 FROM teachers t
                 LEFT JOIN staff_names s ON t.initials = s.initials
@@ -410,6 +412,8 @@ async def update_teacher(
     days_in_school: str = Form(...),
     subject: str = Form(""),
     max_lunch_duties: str = Form(""),
+    min_duties: int = Form(0),
+    can_first_duty: int = Form(0),
     exclude_from_algorithm: int = Form(0),
 ):
     redirect = _require_login(request)
@@ -427,7 +431,7 @@ async def update_teacher(
             UPDATE teachers
             SET protected_periods = ?, classification = ?, days_in_school = ?,
                 is_part_time = ?, non_contact = ?, subject = ?, max_lunch_duties = ?,
-                exclude_from_algorithm = ?, last_updated = ?
+                min_duties = ?, can_first_duty = ?, exclude_from_algorithm = ?, last_updated = ?
             WHERE initials = ?
             """,
             (
@@ -438,6 +442,8 @@ async def update_teacher(
                 max(0, max_load - float(total or 0)),
                 subject.strip(),
                 lunch_limit,
+                max(0, min_duties),
+                1 if can_first_duty else 0,
                 1 if exclude_from_algorithm else 0,
                 datetime.now().isoformat(),
                 initials,
