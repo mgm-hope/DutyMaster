@@ -1413,11 +1413,17 @@ def auto_assign_empty_slots(conn: sqlite3.Connection) -> dict:
                 if balance_slt:
                     sort_key = slt_balance_sort_key(conn, cand["initials"], week, day, code)
                 elif duty_uses_pastoral_distribution(code):
-                    sort_key = (
-                        role_priority(cand["role"]),
+                    pastoral_key = (
                         pastoral_distribution_sort_key(conn, cand["initials"], week, day, code)
                         if cand["role"] == "Pastoral"
-                        else (999, 999, 999, 999, cand["initials"]),
+                        else (999, 999, 999, 999, cand["initials"])
+                    )
+                    sort_key = (
+                        role_priority(cand["role"]),
+                        pastoral_key[0],
+                        pastoral_key[1],
+                        pastoral_key[2],
+                        pastoral_key[3],
                         -score,
                         -tie_break,
                         cand["initials"],
@@ -1428,6 +1434,24 @@ def auto_assign_empty_slots(conn: sqlite3.Connection) -> dict:
             else:
                 if balance_slt:
                     eligible.append({"sort": slt_balance_sort_key(conn, cand["initials"], week, day, code), **cand})
+                elif duty_uses_pastoral_distribution(code):
+                    pastoral_key = (
+                        pastoral_distribution_sort_key(conn, cand["initials"], week, day, code)
+                        if cand["role"] == "Pastoral"
+                        else (999, 999, 999, 999, cand["initials"])
+                    )
+                    eligible.append({
+                        "sort": (
+                            role_priority(cand["role"]),
+                            pastoral_key[0],
+                            pastoral_key[1],
+                            pastoral_key[2],
+                            pastoral_key[3],
+                            staff_total_duty_count(conn, cand["initials"]),
+                            cand["initials"],
+                        ),
+                        **cand,
+                    })
                 else:
                     eligible.append({"sort": (role_priority(cand["role"]), staff_total_duty_count(conn, cand["initials"]), cand["initials"]), **cand})
         if not eligible:
