@@ -656,12 +656,50 @@ def first_duty_override_allowed_for_slot(code: str) -> bool:
     return code in {"P2_First_Duty", "P3_First_Duty", "P5_First_Duty", "P6_First_Duty"}
 
 
+def first_duty_minimum_teacher_slot(code: str) -> bool:
+    return code in {"P2_First_Duty", "P3_First_Duty", "P6_First_Duty"}
+
+
 def teacher_can_first_duty(conn: sqlite3.Connection, initials: str) -> bool:
     row = conn.execute(
         "SELECT COALESCE(can_first_duty, 0) AS can_first_duty FROM teachers WHERE initials = ?",
         (initials,),
     ).fetchone()
     return bool(row and row["can_first_duty"])
+
+
+def teacher_can_cover_first_duty_override(conn: sqlite3.Connection, initials: str, code: str) -> bool:
+    if not first_duty_override_allowed_for_slot(code) or not teacher_can_first_duty(conn, initials):
+        return False
+    if first_duty_minimum_teacher_slot(code) and rule_active(conn, "Period 2/3/6 Pastoral First Duty"):
+        return staff_total_duty_count(conn, initials) < teacher_min_duties(conn, initials)
+    return True
+
+
+def candidate_role_sort_priority(
+    conn: sqlite3.Connection,
+    code: str,
+    initials: str,
+    role: str,
+    source: str,
+    can_first_duty: bool = False,
+) -> int:
+    if first_duty_minimum_teacher_slot(code) and rule_active(conn, "Period 2/3/6 Pastoral First Duty"):
+        if role == "Pastoral":
+            return 0
+        if source == "teacher" and can_first_duty and teacher_can_cover_first_duty_override(conn, initials, code):
+            return 1
+        if role == "SLT":
+            return 2
+    return duty_role_priority(conn, code, role, can_first_duty)
+
+
+def monday_p6_not_required(conn: sqlite3.Connection, week: int, day: str, code: str) -> bool:
+    return (
+        rule_active(conn, "Monday Period 6 Does Not Need Allocating")
+        and day == "Mon"
+        and code.startswith("P6_")
+    )
 
 
 def duty_is_heavy(code: str) -> bool:
@@ -1117,7 +1155,7 @@ def strict_assignment_allowed(
     if role not in allowed_roles and not (
         source == "teacher"
         and first_duty_override_allowed_for_slot(code)
-        and teacher_can_first_duty(conn, initials)
+        and teacher_can_cover_first_duty_override(conn, initials, code)
     ):
         return False
     if role == "Pastoral" and rule_active(conn, "No Consecutive Same Pastoral Duty"):
@@ -1166,7 +1204,7 @@ def candidate_rejection_reason(
     if role not in allowed_roles and not (
         source == "teacher"
         and first_duty_override_allowed_for_slot(code)
-        and teacher_can_first_duty(conn, initials)
+        and teacher_can_cover_first_duty_override(conn, initials, code)
     ):
         return f"role {role} is not allowed for this duty"
     if role == "Pastoral" and rule_active(conn, "No Consecutive Same Pastoral Duty"):
@@ -1204,6 +1242,8 @@ def candidate_rejection_reason(
 
 
 def blank_duty_reason(conn: sqlite3.Connection, week: int, day: str, code: str) -> str:
+    if monday_p6_not_required(conn, week, day, code):
+        return "Monday Period 6 does not need duty allocation (AOW)"
     if code.startswith("P7_") and p7_mode(conn) == "ignore":
         return "Period 7 ignored in Rules"
     if duty_is_manual_fill_only_for_conn(conn, code):
@@ -1244,7 +1284,7 @@ def available_staff(conn: sqlite3.Connection, week: int, day: str, code: str) ->
     )
     for row in conn.execute("SELECT initials, full_name, classification, COALESCE(subject, '') AS subject, COALESCE(can_first_duty, 0) AS can_first_duty FROM teachers ORDER BY initials").fetchall():
         if strict_assignment_allowed(conn, row["initials"], row["classification"], week, day, code, "teacher"):
-            staff.append({"initials": row["initials"], "name": row["full_name"], "role": row["classification"], "subject": row["subject"] or "", "can_first_duty": bool(row["can_first_duty"])})
+            staff.append({"initials": row["initials"], "name": row["full_name"], "role": row["classification"], "subject": row["subject"] or "", "source": "teacher", "can_first_duty": bool(row["can_first_duty"])})
     for row in conn.execute(
         """
         SELECT initials, full_name, category FROM additional_staff
@@ -1253,14 +1293,14 @@ def available_staff(conn: sqlite3.Connection, week: int, day: str, code: str) ->
         """
     ).fetchall():
         if strict_assignment_allowed(conn, row["initials"], row["category"], week, day, code, "additional"):
-            staff.append({"initials": row["initials"], "name": row["full_name"], "role": row["category"], "subject": ""})
+            staff.append({"initials": row["initials"], "name": row["full_name"], "role": row["category"], "subject": "", "source": "additional"})
     if balance_slt:
         return sorted(staff, key=lambda item: slt_balance_sort_key(conn, item["initials"], week, day, code))
     if duty_uses_pastoral_distribution(code):
         return sorted(
             staff,
             key=lambda item: (
-                duty_role_priority(conn, code, item["role"], item.get("can_first_duty", False)),
+                candidate_role_sort_priority(conn, code, item["initials"], item["role"], item.get("source", "teacher"), item.get("can_first_duty", False)),
                 pastoral_distribution_sort_key(conn, item["initials"], week, day, code)
                 if item["role"] == "Pastoral"
                 else (999, 999, 999, 999, item["initials"]),
@@ -1272,7 +1312,7 @@ def available_staff(conn: sqlite3.Connection, week: int, day: str, code: str) ->
         key=lambda item: (
             0 if break_subjects and item.get("subject", "") in break_subjects else 1,
             item.get("subject", ""),
-            duty_role_priority(conn, code, item["role"], item.get("can_first_duty", False)),
+            candidate_role_sort_priority(conn, code, item["initials"], item["role"], item.get("source", "teacher"), item.get("can_first_duty", False)),
             item["initials"],
         ),
     )
@@ -1477,6 +1517,68 @@ def choose_lunch_candidate(conn: sqlite3.Connection, eligible: list[dict], code:
     return additional[0] if additional else None
 
 
+def replace_slt_first_duty_with_minimum_teachers(conn: sqlite3.Connection) -> int:
+    if not rule_active(conn, "Final First Duty SLT Replacement Sweep"):
+        return 0
+    target_codes = ("P2_First_Duty", "P3_First_Duty", "P6_First_Duty")
+    rows = conn.execute(
+        """
+        SELECT week, day, period, staff_initials
+        FROM rota_assignments
+        WHERE period IN (?, ?, ?)
+          AND staff_initials IS NOT NULL
+          AND staff_type = 'SLT'
+        ORDER BY week, id
+        """,
+        target_codes,
+    ).fetchall()
+    replacements = 0
+    for row in rows:
+        week, day, code = row["week"], row["day"], row["period"]
+        if monday_p6_not_required(conn, week, day, code):
+            continue
+        candidates = []
+        for teacher in conn.execute(
+            """
+            SELECT initials, classification AS role, COALESCE(can_first_duty, 0) AS can_first_duty,
+                   COALESCE(min_duties, 0) AS min_duties
+            FROM teachers
+            WHERE COALESCE(can_first_duty, 0) = 1
+              AND classification NOT IN ('SLT', 'Pastoral')
+              AND COALESCE(exclude_from_algorithm, 0) = 0
+            ORDER BY initials
+            """
+        ).fetchall():
+            if staff_total_duty_count(conn, teacher["initials"]) >= int(teacher["min_duties"] or 0):
+                continue
+            if not strict_assignment_allowed(conn, teacher["initials"], teacher["role"], week, day, code, "teacher"):
+                continue
+            score, tie_break = teacher_assignment_score(conn, teacher["initials"], week, day, code)
+            candidates.append(
+                (
+                    staff_total_duty_count(conn, teacher["initials"]),
+                    -score,
+                    -tie_break,
+                    teacher["initials"],
+                    teacher,
+                )
+            )
+        if not candidates:
+            continue
+        candidates.sort()
+        chosen = candidates[0][-1]
+        conn.execute(
+            """
+            UPDATE rota_assignments
+            SET staff_initials = ?, staff_type = ?, assignment_source = 'auto', last_updated = ?
+            WHERE week = ? AND day = ? AND period = ?
+            """,
+            (chosen["initials"], chosen["role"], datetime.now().isoformat(), week, day, code),
+        )
+        replacements += 1
+    return replacements
+
+
 def auto_assign_empty_slots(conn: sqlite3.Connection) -> dict:
     ensure_duty_event_rows(conn)
     pre_repaired = repair_p4_lunch_conflicts(conn)
@@ -1541,6 +1643,8 @@ def auto_assign_empty_slots(conn: sqlite3.Connection) -> dict:
         week, day, code = slot["week"], slot["day"], slot["period"]
         if code not in active_codes:
             continue
+        if monday_p6_not_required(conn, week, day, code):
+            continue
         if duty_is_manual_fill_only_for_conn(conn, code):
             continue
         allowed_roles = role_priority_for_duty_with_settings(conn, code)
@@ -1581,7 +1685,7 @@ def auto_assign_empty_slots(conn: sqlite3.Connection) -> dict:
                         else (999, 999, 999, 999, cand["initials"])
                     )
                     sort_key = (
-                        duty_role_priority(conn, code, cand["role"], cand.get("can_first_duty", False)),
+                        candidate_role_sort_priority(conn, code, cand["initials"], cand["role"], cand["source"], cand.get("can_first_duty", False)),
                         under_min,
                         pastoral_key[0],
                         pastoral_key[1],
@@ -1594,7 +1698,7 @@ def auto_assign_empty_slots(conn: sqlite3.Connection) -> dict:
                 else:
                     sort_key = (
                         subject_score,
-                        duty_role_priority(conn, code, cand["role"], cand.get("can_first_duty", False)),
+                        candidate_role_sort_priority(conn, code, cand["initials"], cand["role"], cand["source"], cand.get("can_first_duty", False)),
                         under_min,
                         -score,
                         -tie_break,
@@ -1613,7 +1717,7 @@ def auto_assign_empty_slots(conn: sqlite3.Connection) -> dict:
                     )
                     eligible.append({
                         "sort": (
-                            duty_role_priority(conn, code, cand["role"]),
+                            candidate_role_sort_priority(conn, code, cand["initials"], cand["role"], cand["source"]),
                             pastoral_key[0],
                             pastoral_key[1],
                             pastoral_key[2],
@@ -1628,7 +1732,7 @@ def auto_assign_empty_slots(conn: sqlite3.Connection) -> dict:
                     eligible.append({
                         "sort": (
                             1,
-                            duty_role_priority(conn, code, cand["role"]),
+                            candidate_role_sort_priority(conn, code, cand["initials"], cand["role"], cand["source"]),
                             0,
                             0,
                             staff_total_duty_count(conn, cand["initials"]),
@@ -1676,9 +1780,10 @@ def auto_assign_empty_slots(conn: sqlite3.Connection) -> dict:
             """,
             ("Insufficient Staff", f"Auto-assign could not fill {DUTY_LABELS.get(slot['period'], slot['period'])}", slot["week"], slot["day"], slot["period"]),
         )
+    replacements = replace_slt_first_duty_with_minimum_teachers(conn)
     conn.commit()
     post_repaired = repair_p4_lunch_conflicts(conn)
-    return {"assigned": assigned, "issues": len(issues), "repaired": pre_repaired + post_repaired}
+    return {"assigned": assigned, "issues": len(issues), "repaired": pre_repaired + post_repaired, "replaced_slt": replacements}
 
 
 def preview_auto_assign(conn: sqlite3.Connection) -> dict:

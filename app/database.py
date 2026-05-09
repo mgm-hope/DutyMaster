@@ -149,6 +149,7 @@ CREATE TABLE IF NOT EXISTS problem_log (
 DEFAULT_RULES = [
     ("Gate Duty = SLT Only", "Gate Duty (08:00) can only be assigned to SLT members."),
     ("Monday P6 = AOW", "Monday Period 6 is automatically Act of Worship for all staff unless they have a real class recorded in the imported timetable. AOW counts as teaching time."),
+    ("Monday Period 6 Does Not Need Allocating", "Monday Period 6 duties do not need auto-allocation because this slot is Act of Worship. DutyMaster leaves Monday Period 6 duty slots blank unless you manually assign them."),
     ("Tutor First Duty = SLT", "First duty during Tutor Time must be SLT and must be distinct from assembly/AOW staff."),
     ("Tutor Pastoral Layers = Pastoral", "Pastoral Support, Room 90, and Isolation during Tutor Time are staffed by Pastoral department members where possible."),
     ("Period 4 Lunch Rules", "Period 4 has five general lunch duty slots plus one Pastoral lunch duty inside each of 4A, 4B, and 4C. Lunch excludes staff teaching Period 4 and respects protected periods and part-time days."),
@@ -173,6 +174,8 @@ DEFAULT_RULES = [
     ("First Duty Other Periods = SLT or Pastoral", "First Duty outside Tutor Time can be assigned to any available SLT or Pastoral member."),
     ("Pastoral First Duty Preference", "Except in Period 1, First Duty should offer and auto-assign eligible Pastoral staff before SLT. Period 1 First Duty keeps SLT as the first preference."),
     ("Teaching Staff Can Do First Duty", "Teachers marked 'Can do 1st Duty' in Teaching Loads can be considered for Period 2, 3, 5, and 6 First Duty after eligible Pastoral and SLT staff."),
+    ("Period 2/3/6 Pastoral First Duty", "Period 2, Period 3, and Period 6 First Duty should be covered by Pastoral first. Teaching staff marked 'Can do 1st Duty' can be used before SLT only when they are below their minimum duty target."),
+    ("Final First Duty SLT Replacement Sweep", "After auto-assign, DutyMaster makes one final pass over Period 2, 3, and 6 First Duty to replace SLT with eligible under-minimum teaching staff who can cover First Duty."),
     ("Late Detention at Break = Pastoral", "Late Detention at Break is staffed by a Pastoral department member and should be distributed evenly if multiple Pastoral staff are available."),
     ("Period 4 Mutual Exclusion", "Staff assigned to Period 4 Lunch cannot also be assigned to 4A, 4B, or 4C duties on the same day, and vice versa."),
     ("Lunch Fill Order", "After suitable teachers are used for lunch duty, fill remaining lunch spaces from ESLT, then Chaplaincy, then Admin, and finally SLT."),
