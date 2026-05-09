@@ -347,7 +347,7 @@ async def update_teacher(
         create_throttled_autosave(conn, "Teaching load edit autosave")
         total = conn.execute("SELECT total_lessons FROM teachers WHERE initials = ?", (initials,)).fetchone()["total_lessons"]
         days_out = days.count("0")
-        max_load = 70 - (6.5 * days_out)
+        max_load = 65 - (6.5 * days_out)
         lunch_limit = int(max_lunch_duties) if str(max_lunch_duties).strip() else None
         conn.execute(
             """

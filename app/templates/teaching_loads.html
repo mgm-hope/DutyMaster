@@ -6,7 +6,7 @@
     {% for t in teachers %}
     {% set days_pattern = (t["days_in_school"] or "1111111111") %}
     {% set days_out = days_pattern.count("0") %}
-    {% set max_load = 70 - (6.5 * days_out) %}
+    {% set max_load = 65 - (6.5 * days_out) %}
     {% set available = max_load - t["total_lessons"] - t["protected_periods"] %}
     {% set form_id = "teacher-load-" ~ t["initials"] %}
     <tr>

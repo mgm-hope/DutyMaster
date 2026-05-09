@@ -38,6 +38,9 @@ SNAPSHOT_TABLES = [
     "problem_log",
 ]
 
+FULL_TIME_TEACHING_LOAD = 65.0
+DAILY_TEACHING_LOAD = 6.5
+
 
 def parse_timetable(xlsx_path: Path) -> dict:
     wb = load_workbook(xlsx_path, data_only=False)
@@ -148,7 +151,7 @@ def parse_timetable(xlsx_path: Path) -> dict:
             for day_key in day_order
         )
         days_out = days_in_school.count("0")
-        max_load = 70 - (6.5 * days_out)
+        max_load = FULL_TIME_TEACHING_LOAD - (DAILY_TEACHING_LOAD * days_out)
         subject_counts = teacher_subject_counts.get(initials, {})
         detected_subject = max(subject_counts, key=subject_counts.get) if subject_counts else ""
         teachers_data.append(
@@ -694,7 +697,7 @@ def teacher_free_periods_remaining(conn: sqlite3.Connection, initials: str) -> f
     if not row:
         return 0
     days = (row["days_in_school"] or "1111111111").ljust(10, "1")[:10]
-    max_load = 70 - (6.5 * days.count("0"))
+    max_load = FULL_TIME_TEACHING_LOAD - (DAILY_TEACHING_LOAD * days.count("0"))
     return max_load - float(row["total_lessons"] or 0) - int(row["protected_periods"] or 0) - staff_total_duty_count(conn, initials)
 
 
@@ -707,7 +710,7 @@ def teacher_free_periods_for_day(conn: sqlite3.Connection, initials: str, week: 
         (initials, week, day),
     ).fetchall()
     teaching = sum(0.5 if row["period"] == "Tutor" else 1 for row in teaching_rows)
-    return 7 - teaching - staff_day_duty_count(conn, initials, week, day)
+    return DAILY_TEACHING_LOAD - teaching - staff_day_duty_count(conn, initials, week, day)
 
 
 def teacher_lunch_limit_reached(conn: sqlite3.Connection, initials: str) -> bool:
@@ -834,7 +837,7 @@ def teacher_available_periods(conn: sqlite3.Connection, initials: str) -> float:
     if not row:
         return 999
     days = (row["days_in_school"] or "1111111111").ljust(10, "1")[:10]
-    max_load = 70 - (6.5 * days.count("0"))
+    max_load = FULL_TIME_TEACHING_LOAD - (DAILY_TEACHING_LOAD * days.count("0"))
     current_duties = conn.execute(
         "SELECT COUNT(*) AS count FROM rota_assignments WHERE staff_initials = ?",
         (initials,),
@@ -1305,7 +1308,7 @@ def auto_assign_empty_slots(conn: sqlite3.Connection) -> dict:
         """
     ).fetchall():
         days = (row["days_in_school"] or "1111111111").ljust(10, "1")[:10]
-        max_load = 70 - (6.5 * days.count("0"))
+        max_load = FULL_TIME_TEACHING_LOAD - (DAILY_TEACHING_LOAD * days.count("0"))
         current_duties = conn.execute("SELECT COUNT(*) AS count FROM rota_assignments WHERE staff_initials = ?", (row["initials"],)).fetchone()["count"]
         heavy_rows = conn.execute("SELECT period FROM rota_assignments WHERE staff_initials = ?", (row["initials"],)).fetchall()
         heavy_count = sum(1 for heavy in heavy_rows if duty_is_heavy(heavy["period"]))
@@ -1466,7 +1469,7 @@ def workload_summary(conn: sqlite3.Connection) -> list[dict]:
         """
     ).fetchall():
         days = (row["days_in_school"] or "1111111111").ljust(10, "1")[:10]
-        max_load = 70 - (6.5 * days.count("0"))
+        max_load = FULL_TIME_TEACHING_LOAD - (DAILY_TEACHING_LOAD * days.count("0"))
         staff[row["initials"]] = {
             "initials": row["initials"],
             "name": row["name"],
