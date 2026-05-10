@@ -657,6 +657,15 @@ def first_duty_override_allowed_for_slot(code: str) -> bool:
     return code in {"P2_First_Duty", "P3_First_Duty", "P5_First_Duty", "P6_First_Duty"}
 
 
+def eslt_first_duty_allowed(conn: sqlite3.Connection, code: str, role: str, source: str) -> bool:
+    return (
+        source == "additional"
+        and role == "ESLT"
+        and first_duty_override_allowed_for_slot(code)
+        and rule_active(conn, "ESLT Can Do First Duty")
+    )
+
+
 def first_duty_minimum_teacher_slot(code: str) -> bool:
     return code in {"P2_First_Duty", "P3_First_Duty", "P6_First_Duty"}
 
@@ -688,10 +697,14 @@ def candidate_role_sort_priority(
     if first_duty_minimum_teacher_slot(code) and rule_active(conn, "Period 2/3/6 Pastoral First Duty"):
         if role == "Pastoral":
             return 0
-        if source == "teacher" and can_first_duty and teacher_can_cover_first_duty_override(conn, initials, code):
+        if eslt_first_duty_allowed(conn, code, role, source):
             return 1
-        if role == "SLT":
+        if source == "teacher" and can_first_duty and teacher_can_cover_first_duty_override(conn, initials, code):
             return 2
+        if role == "SLT":
+            return 3
+    if eslt_first_duty_allowed(conn, code, role, source):
+        return 1
     return duty_role_priority(conn, code, role, can_first_duty)
 
 
@@ -1165,7 +1178,7 @@ def strict_assignment_allowed(
         source == "teacher"
         and first_duty_override_allowed_for_slot(code)
         and teacher_can_cover_first_duty_override(conn, initials, code)
-    ):
+    ) and not eslt_first_duty_allowed(conn, code, role, source):
         return False
     if role == "Pastoral" and rule_active(conn, "No Consecutive Same Pastoral Duty"):
         if pastoral_repeats_same_duty_previous_period(conn, initials, week, day, code):
@@ -1178,7 +1191,7 @@ def strict_assignment_allowed(
     else:
         if not additional_available(conn, initials, week, day, code, allow_auto_p4_repair):
             return False
-        if role in {"ESLT", "Chaplaincy", "Admin"} and not duty_is_lunch(code):
+        if role in {"ESLT", "Chaplaincy", "Admin"} and not duty_is_lunch(code) and not eslt_first_duty_allowed(conn, code, role, source):
             return False
         if additional_max_reached(conn, initials):
             return False
@@ -1212,7 +1225,7 @@ def candidate_rejection_reason(
         source == "teacher"
         and first_duty_override_allowed_for_slot(code)
         and teacher_can_cover_first_duty_override(conn, initials, code)
-    ):
+    ) and not eslt_first_duty_allowed(conn, code, role, source):
         return f"role {role} is not allowed for this duty"
     if role == "Pastoral" and rule_active(conn, "No Consecutive Same Pastoral Duty"):
         if pastoral_repeats_same_duty_previous_period(conn, initials, week, day, code):
@@ -1230,7 +1243,7 @@ def candidate_rejection_reason(
             return "maximum lunch duty limit reached"
     elif not additional_available(conn, initials, week, day, code):
         return "not active, out of school, or already on a clashing duty"
-    elif role in {"ESLT", "Chaplaincy", "Admin"} and not duty_is_lunch(code):
+    elif role in {"ESLT", "Chaplaincy", "Admin"} and not duty_is_lunch(code) and not eslt_first_duty_allowed(conn, code, role, source):
         return "additional staff are only eligible for lunch duties"
     elif additional_max_reached(conn, initials):
         return "additional staff maximum duty limit reached"
@@ -1710,7 +1723,7 @@ def auto_assign_empty_slots(conn: sqlite3.Connection) -> dict:
                 continue
             if code.startswith("P4_Lunch_") and cand["source"] == "additional" and cand["role"] not in {"ESLT", "Chaplaincy", "Admin"}:
                 continue
-            if not duty_is_lunch(code) and cand["source"] == "additional" and cand["role"] in {"ESLT", "Chaplaincy", "Admin"}:
+            if not duty_is_lunch(code) and cand["source"] == "additional" and cand["role"] in {"ESLT", "Chaplaincy", "Admin"} and not eslt_first_duty_allowed(conn, code, cand["role"], cand["source"]):
                 continue
             if cand["source"] == "teacher":
                 score, tie_break = teacher_assignment_score(conn, cand["initials"], week, day, code)

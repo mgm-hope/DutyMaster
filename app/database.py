@@ -173,6 +173,7 @@ DEFAULT_RULES = [
     ("Period 1 Isolation = SLT Only", "Period 1 Isolation is covered by SLT, not Pastoral. Only selected/participating SLT should be used."),
     ("First Duty Other Periods = SLT or Pastoral", "First Duty outside Tutor Time can be assigned to any available SLT or Pastoral member."),
     ("Pastoral First Duty Preference", "Except in Period 1, First Duty should offer and auto-assign eligible Pastoral staff before SLT. Period 1 First Duty keeps SLT as the first preference."),
+    ("ESLT Can Do First Duty", "ESLT staff can be assigned to general First Duty slots outside Tutor Time, Period 1, and Period 4A/4B/4C. They are considered after Pastoral and before SLT."),
     ("Teaching Staff Can Do First Duty", "Teachers marked 'Can do 1st Duty' in Teaching Loads can be considered for Period 2, 3, 5, and 6 First Duty after eligible Pastoral and SLT staff."),
     ("Period 2/3/6 Pastoral First Duty", "Period 2, Period 3, and Period 6 First Duty should be covered by Pastoral first. Teaching staff marked 'Can do 1st Duty' can be used before SLT only when they are below their minimum duty target."),
     ("Final First Duty SLT Replacement Sweep", "After auto-assign, DutyMaster makes one final pass over Period 2, 3, and 6 First Duty to replace SLT with eligible under-minimum teaching staff who can cover First Duty."),
