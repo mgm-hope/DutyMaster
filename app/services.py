@@ -1671,6 +1671,64 @@ def replace_slt_first_duty_with_minimum_teachers(conn: sqlite3.Connection) -> in
     return replacements
 
 
+def replace_slt_first_duty_with_pastoral(conn: sqlite3.Connection) -> int:
+    if not rule_active(conn, "Pastoral First Duty Preference"):
+        return 0
+    target_codes = ("P2_First_Duty", "P3_First_Duty", "P5_First_Duty", "P6_First_Duty")
+    rows = conn.execute(
+        """
+        SELECT week, day, period, staff_initials
+        FROM rota_assignments
+        WHERE period IN (?, ?, ?, ?)
+          AND staff_initials IS NOT NULL
+          AND staff_type = 'SLT'
+          AND COALESCE(assignment_source, '') = 'auto'
+        ORDER BY week, id
+        """,
+        target_codes,
+    ).fetchall()
+    replacements = 0
+    for row in rows:
+        week, day, code = row["week"], row["day"], row["period"]
+        if monday_p6_not_required(conn, week, day, code):
+            continue
+        candidates = []
+        for staff in conn.execute(
+            """
+            SELECT initials, category AS role
+            FROM additional_staff
+            WHERE category = 'Pastoral'
+              AND COALESCE(is_archived, 0) = 0
+              AND COALESCE(status, 'Active') = 'Active'
+            ORDER BY initials
+            """
+        ).fetchall():
+            if not strict_assignment_allowed(conn, staff["initials"], staff["role"], week, day, code, "additional"):
+                continue
+            candidates.append(
+                (
+                    pastoral_distribution_sort_key(conn, staff["initials"], week, day, code),
+                    staff_total_duty_count(conn, staff["initials"]),
+                    staff["initials"],
+                    staff,
+                )
+            )
+        if not candidates:
+            continue
+        candidates.sort()
+        chosen = candidates[0][-1]
+        conn.execute(
+            """
+            UPDATE rota_assignments
+            SET staff_initials = ?, staff_type = ?, assignment_source = 'auto', last_updated = ?
+            WHERE week = ? AND day = ? AND period = ?
+            """,
+            (chosen["initials"], chosen["role"], datetime.now().isoformat(), week, day, code),
+        )
+        replacements += 1
+    return replacements
+
+
 def optimise_lunch_fairness(conn: sqlite3.Connection) -> int:
     active_codes = active_duty_codes(conn)
     rows = conn.execute(
@@ -1945,6 +2003,7 @@ def auto_assign_empty_slots(conn: sqlite3.Connection) -> dict:
             """,
             ("Insufficient Staff", f"Auto-assign could not fill {DUTY_LABELS.get(slot['period'], slot['period'])}", slot["week"], slot["day"], slot["period"]),
         )
+    pastoral_replacements = replace_slt_first_duty_with_pastoral(conn)
     replacements = replace_slt_first_duty_with_minimum_teachers(conn)
     lunch_swaps = optimise_lunch_fairness(conn)
     conn.commit()
@@ -1954,6 +2013,7 @@ def auto_assign_empty_slots(conn: sqlite3.Connection) -> dict:
         "issues": len(issues),
         "repaired": pre_repaired + post_repaired,
         "replaced_slt": replacements,
+        "replaced_first_duty_pastoral": pastoral_replacements,
         "lunch_swaps": lunch_swaps,
     }
 

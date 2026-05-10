@@ -33,6 +33,7 @@
     <p>
         Preview only: no live duties were changed. It would assign {{ preview.would_assign|length }}
         slot(s), leave {{ preview.blanks|length }} blank, repair {{ preview.result.repaired }} Period 4 conflict(s),
+        move {{ preview.result.replaced_first_duty_pastoral|default(0) }} First Duty slot(s) from SLT to Pastoral,
         and make {{ preview.result.lunch_swaps|default(0) }} lunch fairness swap(s).
     </p>
     {% if preview.would_assign %}

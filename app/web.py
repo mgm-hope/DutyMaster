@@ -1004,6 +1004,7 @@ async def prebuilt_auto_assign(request: Request):
         request,
         f"Auto-assigned {result['assigned']} slot(s). {result['issues']} need manual review. "
         f"Repaired {result['repaired']} Period 4 conflict(s). "
+        f"Moved {result.get('replaced_first_duty_pastoral', 0)} First Duty slot(s) from SLT to Pastoral. "
         f"Made {result.get('lunch_swaps', 0)} lunch fairness swap(s).",
     )
     return RedirectResponse("/prebuilt", status_code=303)
