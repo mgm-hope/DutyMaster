@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Staff Load Summary</h2>
+<p class="muted">
+    Period-only workload view using Periods 1, 2, 3, 4, 5, and 6. Tutor, Gate, and Period 7 are excluded from the teaching/non-contact calculation.
+</p>
+
+<section class="summary-grid">
+    <div class="summary-card">
+        <span>Teaching P1-6</span>
+        <strong>{{ totals.teaching }}</strong>
+    </div>
+    <div class="summary-card">
+        <span>Non-contact P1-6</span>
+        <strong>{{ totals.non_contact }}</strong>
+    </div>
+    <div class="summary-card">
+        <span>Protected</span>
+        <strong>{{ totals.protected }}</strong>
+    </div>
+    <div class="summary-card">
+        <span>P1-6 Duties</span>
+        <strong>{{ totals.p1_6_duties }}</strong>
+    </div>
+    <div class="summary-card">
+        <span>Remaining</span>
+        <strong>{{ totals.remaining }}</strong>
+    </div>
+</section>
+
+<section class="panel">
+    <h3>Staff Loads</h3>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Staff</th>
+                    <th>Name</th>
+                    <th>Role</th>
+                    <th>Subject / Faculty</th>
+                    <th>Possible P1-6</th>
+                    <th>Teaching P1-6</th>
+                    <th>Total non-contact P1-6</th>
+                    <th>Protected</th>
+                    <th>P1-6 duties</th>
+                    <th>Break duties</th>
+                    <th>First Duty</th>
+                    <th>Lunch</th>
+                    <th>Total duties</th>
+                    <th>Non-contact remaining</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in rows %}
+                <tr class="{% if row.remaining < 0 %}danger-row{% elif row.remaining <= 1 %}warning-row{% endif %}">
+                    <td><strong>{{ row.initials }}</strong></td>
+                    <td>{{ row.full_name }}</td>
+                    <td>{{ row.classification }}</td>
+                    <td>{{ row.subject or "—" }}</td>
+                    <td>{{ row.possible_p1_6 }}</td>
+                    <td>{{ row.teaching_p1_6 }}</td>
+                    <td>{{ row.non_contact_p1_6 }}</td>
+                    <td>{{ row.protected }}</td>
+                    <td>{{ row.p1_6_duties }}</td>
+                    <td>{{ row.break_duties }}</td>
+                    <td>{{ row.first_duties }}</td>
+                    <td>{{ row.lunch_duties }}</td>
+                    <td>{{ row.total_duties }}</td>
+                    <td><strong>{{ row.remaining }}</strong></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}

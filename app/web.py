@@ -454,6 +454,103 @@ async def update_teacher(
     return RedirectResponse("/teaching-loads", status_code=303)
 
 
+@app.get("/staff-load-summary", response_class=HTMLResponse)
+def staff_load_summary(request: Request):
+    redirect = _require_login(request)
+    if redirect:
+        return redirect
+    teaching_periods = {"1", "2", "3", "4", "5", "6"}
+    lesson_duty_prefixes = ("P1_", "P2_", "P3_", "P4_", "P4A_", "P4B_", "P4C_", "P5_", "P6_")
+    with _conn_context() as conn:
+        teachers = conn.execute(
+            """
+            SELECT t.initials,
+                   COALESCE(s.full_name, t.full_name, t.initials) AS full_name,
+                   COALESCE(t.classification, 'Teacher') AS classification,
+                   COALESCE(t.protected_periods, 6) AS protected_periods,
+                   COALESCE(t.days_in_school, '1111111111') AS days_in_school,
+                   COALESCE(t.subject, '') AS subject
+            FROM teachers t
+            LEFT JOIN staff_names s ON t.initials = s.initials
+            ORDER BY t.initials
+            """
+        ).fetchall()
+        rows = []
+        totals = {
+            "teaching": 0,
+            "non_contact": 0,
+            "protected": 0,
+            "p1_6_duties": 0,
+            "break_duties": 0,
+            "first_duties": 0,
+            "lunch_duties": 0,
+            "remaining": 0,
+        }
+        for teacher in teachers:
+            initials = teacher["initials"]
+            days = (teacher["days_in_school"] or "1111111111").ljust(10, "1")[:10]
+            possible_p1_6 = days.count("1") * 6
+            teaching_p1_6 = conn.execute(
+                """
+                SELECT COUNT(*) AS count
+                FROM teacher_periods
+                WHERE teacher_initials = ?
+                  AND period IN ('1', '2', '3', '4', '5', '6')
+                """,
+                (initials,),
+            ).fetchone()["count"]
+            duty_rows = conn.execute(
+                """
+                SELECT period
+                FROM rota_assignments
+                WHERE staff_initials = ?
+                """,
+                (initials,),
+            ).fetchall()
+            duty_codes = [row["period"] for row in duty_rows]
+            p1_6_duties = sum(1 for code in duty_codes if code.startswith(lesson_duty_prefixes))
+            break_duties = sum(1 for code in duty_codes if code.startswith("Break_") or code.startswith("Teacher_Break_Rota_"))
+            first_duties = sum(1 for code in duty_codes if "First_Duty" in code)
+            lunch_duties = sum(
+                1
+                for code in duty_codes
+                if code.startswith("P4_Lunch_") or code in {"P4A_Lunch_Duty", "P4B_Lunch_Duty", "P4C_Lunch_Duty"}
+            )
+            total_duties = len(duty_codes)
+            non_contact_p1_6 = max(0, possible_p1_6 - int(teaching_p1_6 or 0))
+            protected = int(teacher["protected_periods"] or 0)
+            remaining = non_contact_p1_6 - protected - p1_6_duties
+            row = {
+                "initials": initials,
+                "full_name": teacher["full_name"],
+                "classification": teacher["classification"],
+                "subject": teacher["subject"] or "",
+                "possible_p1_6": possible_p1_6,
+                "teaching_p1_6": int(teaching_p1_6 or 0),
+                "non_contact_p1_6": non_contact_p1_6,
+                "protected": protected,
+                "p1_6_duties": p1_6_duties,
+                "break_duties": break_duties,
+                "first_duties": first_duties,
+                "lunch_duties": lunch_duties,
+                "total_duties": total_duties,
+                "remaining": remaining,
+            }
+            rows.append(row)
+            totals["teaching"] += row["teaching_p1_6"]
+            totals["non_contact"] += row["non_contact_p1_6"]
+            totals["protected"] += row["protected"]
+            totals["p1_6_duties"] += row["p1_6_duties"]
+            totals["break_duties"] += row["break_duties"]
+            totals["first_duties"] += row["first_duties"]
+            totals["lunch_duties"] += row["lunch_duties"]
+            totals["remaining"] += row["remaining"]
+    return templates.TemplateResponse(
+        "staff_load_summary.html",
+        _base_context(request, "Staff Load Summary", rows=rows, totals=totals),
+    )
+
+
 @app.get("/additional-staff", response_class=HTMLResponse)
 def additional_staff(request: Request):
     redirect = _require_login(request)
