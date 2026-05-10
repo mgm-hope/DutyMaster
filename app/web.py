@@ -1002,7 +1002,9 @@ async def prebuilt_auto_assign(request: Request):
         result = auto_assign_empty_slots(conn)
     _flash(
         request,
-        f"Auto-assigned {result['assigned']} slot(s). {result['issues']} need manual review. Repaired {result['repaired']} Period 4 conflict(s).",
+        f"Auto-assigned {result['assigned']} slot(s). {result['issues']} need manual review. "
+        f"Repaired {result['repaired']} Period 4 conflict(s). "
+        f"Made {result.get('lunch_swaps', 0)} lunch fairness swap(s).",
     )
     return RedirectResponse("/prebuilt", status_code=303)
 

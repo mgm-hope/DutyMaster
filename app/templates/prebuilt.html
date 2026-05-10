@@ -32,7 +32,8 @@
     <h3>Auto-Assign Preview</h3>
     <p>
         Preview only: no live duties were changed. It would assign {{ preview.would_assign|length }}
-        slot(s), leave {{ preview.blanks|length }} blank, and repair {{ preview.result.repaired }} Period 4 conflict(s).
+        slot(s), leave {{ preview.blanks|length }} blank, repair {{ preview.result.repaired }} Period 4 conflict(s),
+        and make {{ preview.result.lunch_swaps|default(0) }} lunch fairness swap(s).
     </p>
     {% if preview.would_assign %}
     <table>

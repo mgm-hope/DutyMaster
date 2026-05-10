@@ -886,6 +886,38 @@ def teacher_free_periods_remaining(conn: sqlite3.Connection, initials: str) -> f
     return max_load - float(row["total_lessons"] or 0) - int(row["protected_periods"] or 0) - staff_total_duty_count(conn, initials)
 
 
+def teacher_p1_6_non_contact_remaining(conn: sqlite3.Connection, initials: str) -> int:
+    row = conn.execute(
+        "SELECT protected_periods, days_in_school FROM teachers WHERE initials = ?",
+        (initials,),
+    ).fetchone()
+    if not row:
+        return -999
+    days = (row["days_in_school"] or "1111111111").ljust(10, "1")[:10]
+    possible = days.count("1") * 6
+    teaching = conn.execute(
+        """
+        SELECT COUNT(*) AS count
+        FROM teacher_periods
+        WHERE teacher_initials = ?
+          AND period IN ('1', '2', '3', '4', '5', '6')
+        """,
+        (initials,),
+    ).fetchone()["count"]
+    duty_prefixes = ("P1_%", "P2_%", "P3_%", "P4_%", "P4A_%", "P4B_%", "P4C_%", "P5_%", "P6_%")
+    duty_conditions = " OR ".join("period LIKE ?" for _ in duty_prefixes)
+    duties = conn.execute(
+        f"""
+        SELECT COUNT(*) AS count
+        FROM rota_assignments
+        WHERE staff_initials = ?
+          AND ({duty_conditions})
+        """,
+        (initials, *duty_prefixes),
+    ).fetchone()["count"]
+    return int(possible - int(teaching or 0) - int(row["protected_periods"] or 0) - int(duties or 0))
+
+
 def teacher_free_periods_for_day(conn: sqlite3.Connection, initials: str, week: int, day: str) -> float:
     teaching_rows = conn.execute(
         """
@@ -1639,6 +1671,70 @@ def replace_slt_first_duty_with_minimum_teachers(conn: sqlite3.Connection) -> in
     return replacements
 
 
+def optimise_lunch_fairness(conn: sqlite3.Connection) -> int:
+    active_codes = active_duty_codes(conn)
+    rows = conn.execute(
+        """
+        SELECT week, day, period, staff_initials, staff_type
+        FROM rota_assignments
+        WHERE staff_initials IS NOT NULL
+          AND period LIKE 'P4_Lunch_%'
+          AND staff_type IN ('Teacher', 'HOF')
+          AND assignment_source = 'auto'
+        ORDER BY week, id
+        """
+    ).fetchall()
+    swaps = 0
+    for row in rows:
+        week, day, code = row["week"], row["day"], row["period"]
+        if code not in active_codes:
+            continue
+        current_initials = row["staff_initials"]
+        current_remaining = teacher_p1_6_non_contact_remaining(conn, current_initials)
+        candidates = []
+        for teacher in conn.execute(
+            """
+            SELECT initials, classification AS role
+            FROM teachers
+            WHERE classification IN ('Teacher', 'HOF')
+              AND COALESCE(exclude_from_algorithm, 0) = 0
+            ORDER BY initials
+            """
+        ).fetchall():
+            if teacher["initials"] == current_initials:
+                continue
+            if not strict_assignment_allowed(conn, teacher["initials"], teacher["role"], week, day, code, "teacher"):
+                continue
+            candidate_remaining = teacher_p1_6_non_contact_remaining(conn, teacher["initials"])
+            improvement = candidate_remaining - current_remaining
+            # A difference of 1 just swaps who is slightly better off. Require 2+ so the rota genuinely improves.
+            if improvement < 2:
+                continue
+            candidates.append(
+                (
+                    -improvement,
+                    -candidate_remaining,
+                    staff_lunch_duty_count(conn, teacher["initials"]),
+                    teacher["initials"],
+                    teacher,
+                )
+            )
+        if not candidates:
+            continue
+        candidates.sort()
+        chosen = candidates[0][-1]
+        conn.execute(
+            """
+            UPDATE rota_assignments
+            SET staff_initials = ?, staff_type = ?, assignment_source = 'auto', last_updated = ?
+            WHERE week = ? AND day = ? AND period = ?
+            """,
+            (chosen["initials"], chosen["role"], datetime.now().isoformat(), week, day, code),
+        )
+        swaps += 1
+    return swaps
+
+
 def auto_assign_empty_slots(conn: sqlite3.Connection) -> dict:
     ensure_duty_event_rows(conn)
     pre_repaired = repair_p4_lunch_conflicts(conn)
@@ -1850,9 +1946,16 @@ def auto_assign_empty_slots(conn: sqlite3.Connection) -> dict:
             ("Insufficient Staff", f"Auto-assign could not fill {DUTY_LABELS.get(slot['period'], slot['period'])}", slot["week"], slot["day"], slot["period"]),
         )
     replacements = replace_slt_first_duty_with_minimum_teachers(conn)
+    lunch_swaps = optimise_lunch_fairness(conn)
     conn.commit()
     post_repaired = repair_p4_lunch_conflicts(conn)
-    return {"assigned": assigned, "issues": len(issues), "repaired": pre_repaired + post_repaired, "replaced_slt": replacements}
+    return {
+        "assigned": assigned,
+        "issues": len(issues),
+        "repaired": pre_repaired + post_repaired,
+        "replaced_slt": replacements,
+        "lunch_swaps": lunch_swaps,
+    }
 
 
 def preview_auto_assign(conn: sqlite3.Connection) -> dict:
