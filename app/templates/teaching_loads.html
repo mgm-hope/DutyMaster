@@ -21,7 +21,7 @@
         <td>{{ "%.1f"|format(available) }}</td>
         <td>
             <select form="{{ form_id }}" name="classification">
-                {% for c in ["Teacher", "HOF", "SLT"] %}
+                {% for c in ["Teacher", "HOF", "SLT", "ESLT"] %}
                 <option value="{{ c }}" {% if t["classification"] == c %}selected{% endif %}>{{ c }}</option>
                 {% endfor %}
             </select>

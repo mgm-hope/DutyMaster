@@ -304,7 +304,7 @@ def seed_defaults(conn: sqlite3.Connection) -> None:
     )
     conn.executemany(
         "INSERT OR IGNORE INTO classifications(name) VALUES (?)",
-        [("Teacher",), ("HOF",), ("SLT",)],
+        [("Teacher",), ("HOF",), ("SLT",), ("ESLT",)],
     )
     conn.executemany(
         "INSERT OR IGNORE INTO rules(name, description) VALUES (?, ?)",
