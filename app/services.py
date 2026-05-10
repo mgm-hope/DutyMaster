@@ -563,6 +563,7 @@ def same_time_assignment_exists(
             continue
         if (
             allow_auto_p4_repair
+            and current_group != existing_group
             and (current_group == "P4_Lunch" or existing_group == "P4_Lunch")
             and row["assignment_source"] == "auto"
         ):
@@ -1430,6 +1431,32 @@ def repair_p4_lunch_conflicts(conn: sqlite3.Connection) -> int:
               AND (period LIKE 'P4A_%' OR period LIKE 'P4B_%' OR period LIKE 'P4C_%')
             """,
             (datetime.now().isoformat(), row["week"], row["day"], row["staff_initials"]),
+        )
+        cleared += cursor.rowcount
+    duplicate_rows = conn.execute(
+        """
+        SELECT week, day, staff_initials, GROUP_CONCAT(id, ',') AS ids, COUNT(*) AS count
+        FROM rota_assignments
+        WHERE staff_initials IS NOT NULL
+          AND period LIKE 'P4_Lunch_%'
+        GROUP BY week, day, staff_initials
+        HAVING COUNT(*) > 1
+        """
+    ).fetchall()
+    for row in duplicate_rows:
+        ids = [int(item) for item in str(row["ids"]).split(",") if item]
+        keep_id = min(ids)
+        clear_ids = [item for item in ids if item != keep_id]
+        if not clear_ids:
+            continue
+        placeholders = ",".join("?" for _ in clear_ids)
+        cursor = conn.execute(
+            f"""
+            UPDATE rota_assignments
+            SET staff_initials = NULL, staff_type = NULL, assignment_source = NULL, last_updated = ?
+            WHERE id IN ({placeholders})
+            """,
+            (datetime.now().isoformat(), *clear_ids),
         )
         cleared += cursor.rowcount
     conn.commit()
