@@ -29,6 +29,73 @@
 </section>
 
 <section class="panel">
+    <h3>Find SLT Replacement Opportunities</h3>
+    <form method="get" action="/staff-load-summary" class="inline-form">
+        <label>
+            Select teaching staff
+            <select name="staff">
+                <option value="">Choose a member of staff...</option>
+                {% for option in teacher_options %}
+                <option value="{{ option.initials }}" {% if selected_staff == option.initials %}selected{% endif %}>{{ option.label }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <button type="submit">Show free duty options</button>
+    </form>
+
+    {% if selected_teacher %}
+        <p class="muted">
+            Showing SLT-held duties where {{ selected_teacher.initials }} is free and can be assigned without breaking active rules.
+        </p>
+        {% if replacement_options %}
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Week</th>
+                        <th>Day</th>
+                        <th>Duty</th>
+                        <th>Current SLT</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for option in replacement_options %}
+                    <tr>
+                        <td>Week {{ option.week }}</td>
+                        <td>{{ option.day }}</td>
+                        <td>{{ option.label }}</td>
+                        <td>{{ option.current }}</td>
+                        <td>
+                            <form method="post" action="/staff-load-summary/assign" class="inline-form">
+                                <input type="hidden" name="initials" value="{{ selected_teacher.initials }}">
+                                <input type="hidden" name="week" value="{{ option.week }}">
+                                <input type="hidden" name="day" value="{{ option.day }}">
+                                <input type="hidden" name="period" value="{{ option.period }}">
+                                <button type="submit">Assign</button>
+                            </form>
+                            <form method="post" action="/staff-load-summary/ignore" class="inline-form">
+                                <input type="hidden" name="initials" value="{{ selected_teacher.initials }}">
+                                <input type="hidden" name="week" value="{{ option.week }}">
+                                <input type="hidden" name="day" value="{{ option.day }}">
+                                <input type="hidden" name="period" value="{{ option.period }}">
+                                <button type="submit" class="secondary">Ignore</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="empty-state">
+            No SLT replacement opportunities found for {{ selected_teacher.initials }} under the current rules.
+        </div>
+        {% endif %}
+    {% endif %}
+</section>
+
+<section class="panel">
     <h3>Staff Loads</h3>
     <div class="table-wrap">
         <table>
@@ -56,7 +123,7 @@
                     <td><strong>{{ row.initials }}</strong></td>
                     <td>{{ row.full_name }}</td>
                     <td>{{ row.classification }}</td>
-                    <td>{{ row.subject or "—" }}</td>
+                    <td>{{ row.subject or "-" }}</td>
                     <td>{{ row.possible_p1_6 }}</td>
                     <td>{{ row.teaching_p1_6 }}</td>
                     <td>{{ row.non_contact_p1_6 }}</td>

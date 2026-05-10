@@ -51,6 +51,7 @@ from .services import (
     reset_upload_data,
     repair_p4_lunch_conflicts,
     restore_version_snapshot,
+    strict_assignment_allowed,
     save_parsed_timetable,
     workload_summary,
 )
@@ -459,6 +460,7 @@ def staff_load_summary(request: Request):
     redirect = _require_login(request)
     if redirect:
         return redirect
+    selected_staff = (request.query_params.get("staff") or "").strip().upper()
     teaching_periods = {"1", "2", "3", "4", "5", "6"}
     lesson_duty_prefixes = ("P1_", "P2_", "P3_", "P4_", "P4A_", "P4B_", "P4C_", "P5_", "P6_")
     with _conn_context() as conn:
@@ -486,6 +488,10 @@ def staff_load_summary(request: Request):
             "lunch_duties": 0,
             "remaining": 0,
         }
+        teacher_options = [
+            {"initials": row["initials"], "label": f"{row['initials']} - {row['full_name']} ({row['classification']})"}
+            for row in teachers
+        ]
         for teacher in teachers:
             initials = teacher["initials"]
             days = (teacher["days_in_school"] or "1111111111").ljust(10, "1")[:10]
@@ -545,10 +551,120 @@ def staff_load_summary(request: Request):
             totals["first_duties"] += row["first_duties"]
             totals["lunch_duties"] += row["lunch_duties"]
             totals["remaining"] += row["remaining"]
+        selected_teacher = None
+        replacement_options = []
+        if selected_staff:
+            selected_teacher = conn.execute(
+                """
+                SELECT t.initials,
+                       COALESCE(s.full_name, t.full_name, t.initials) AS full_name,
+                       COALESCE(t.classification, 'Teacher') AS classification
+                FROM teachers t
+                LEFT JOIN staff_names s ON t.initials = s.initials
+                WHERE t.initials = ?
+                """,
+                (selected_staff,),
+            ).fetchone()
+        ignored = set(request.session.get("load_summary_ignored", []))
+        if selected_teacher:
+            for duty in conn.execute(
+                """
+                SELECT week, day, period, staff_initials, staff_type, COALESCE(assignment_source, '') AS assignment_source
+                FROM rota_assignments
+                WHERE staff_initials IS NOT NULL
+                  AND staff_type = 'SLT'
+                ORDER BY week, id
+                """
+            ).fetchall():
+                key = f"{selected_staff}|{duty['week']}|{duty['day']}|{duty['period']}"
+                if key in ignored:
+                    continue
+                if not strict_assignment_allowed(
+                    conn,
+                    selected_teacher["initials"],
+                    selected_teacher["classification"],
+                    duty["week"],
+                    duty["day"],
+                    duty["period"],
+                    "teacher",
+                ):
+                    continue
+                replacement_options.append(
+                    {
+                        "key": key,
+                        "week": duty["week"],
+                        "day": duty["day"],
+                        "period": duty["period"],
+                        "label": DUTY_LABELS.get(duty["period"], duty["period"]),
+                        "current": duty["staff_initials"],
+                        "source": duty["assignment_source"],
+                    }
+                )
     return templates.TemplateResponse(
         "staff_load_summary.html",
-        _base_context(request, "Staff Load Summary", rows=rows, totals=totals),
+        _base_context(
+            request,
+            "Staff Load Summary",
+            rows=rows,
+            totals=totals,
+            teacher_options=teacher_options,
+            selected_staff=selected_staff,
+            selected_teacher=selected_teacher,
+            replacement_options=replacement_options,
+        ),
     )
+
+
+@app.post("/staff-load-summary/assign")
+async def staff_load_summary_assign(
+    request: Request,
+    initials: str = Form(...),
+    week: int = Form(...),
+    day: str = Form(...),
+    period: str = Form(...),
+):
+    redirect = _require_login(request)
+    if redirect:
+        return redirect
+    initials = initials.strip().upper()
+    with _conn_context() as conn:
+        teacher = conn.execute("SELECT classification FROM teachers WHERE initials = ?", (initials,)).fetchone()
+        if not teacher:
+            _flash(request, f"{initials} was not found.")
+            return RedirectResponse(f"/staff-load-summary?staff={initials}", status_code=303)
+        current = conn.execute(
+            "SELECT staff_initials, staff_type FROM rota_assignments WHERE week = ? AND day = ? AND period = ?",
+            (week, day, period),
+        ).fetchone()
+        if not current or current["staff_type"] != "SLT":
+            _flash(request, "That duty is no longer held by SLT.")
+            return RedirectResponse(f"/staff-load-summary?staff={initials}", status_code=303)
+        result = assign_staff(conn, week, day, period, initials, teacher["classification"], assignment_source="manual_adjustment")
+        if result < 0:
+            _flash(request, f"{initials} could not be assigned without breaking an active rule.")
+        else:
+            _flash(request, f"{initials} replaced {current['staff_initials']} on {DUTY_LABELS.get(period, period)}.")
+    return RedirectResponse(f"/staff-load-summary?staff={initials}", status_code=303)
+
+
+@app.post("/staff-load-summary/ignore")
+async def staff_load_summary_ignore(
+    request: Request,
+    initials: str = Form(...),
+    week: int = Form(...),
+    day: str = Form(...),
+    period: str = Form(...),
+):
+    redirect = _require_login(request)
+    if redirect:
+        return redirect
+    initials = initials.strip().upper()
+    key = f"{initials}|{week}|{day}|{period}"
+    ignored = set(request.session.get("load_summary_ignored", []))
+    ignored.add(key)
+    request.session["load_summary_ignored"] = sorted(ignored)
+    _flash(request, f"Ignored this suggestion for {initials}.")
+    return RedirectResponse(f"/staff-load-summary?staff={initials}", status_code=303)
 
 
 @app.get("/additional-staff", response_class=HTMLResponse)
