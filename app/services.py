@@ -818,7 +818,7 @@ def staff_scope_matches(initials: str, role: str, scope: str) -> bool:
 
 def staff_week_duty_count(conn: sqlite3.Connection, initials: str, week: int) -> int:
     row = conn.execute(
-        "SELECT COUNT(*) AS count FROM rota_assignments WHERE staff_initials = ? AND week = ?",
+        "SELECT COUNT(*) AS count FROM rota_assignments WHERE staff_initials = ? AND week = ? AND period NOT LIKE 'Teacher_Break_Rota_%'",
         (initials, week),
     ).fetchone()
     return int(row["count"] or 0)
@@ -826,7 +826,7 @@ def staff_week_duty_count(conn: sqlite3.Connection, initials: str, week: int) ->
 
 def staff_day_duty_count(conn: sqlite3.Connection, initials: str, week: int, day: str) -> int:
     row = conn.execute(
-        "SELECT COUNT(*) AS count FROM rota_assignments WHERE staff_initials = ? AND week = ? AND day = ?",
+        "SELECT COUNT(*) AS count FROM rota_assignments WHERE staff_initials = ? AND week = ? AND day = ? AND period NOT LIKE 'Teacher_Break_Rota_%'",
         (initials, week, day),
     ).fetchone()
     return int(row["count"] or 0)
@@ -834,7 +834,15 @@ def staff_day_duty_count(conn: sqlite3.Connection, initials: str, week: int, day
 
 def staff_total_duty_count(conn: sqlite3.Connection, initials: str) -> int:
     row = conn.execute(
-        "SELECT COUNT(*) AS count FROM rota_assignments WHERE staff_initials = ?",
+        "SELECT COUNT(*) AS count FROM rota_assignments WHERE staff_initials = ? AND period NOT LIKE 'Teacher_Break_Rota_%'",
+        (initials,),
+    ).fetchone()
+    return int(row["count"] or 0)
+
+
+def teacher_break_total_count(conn: sqlite3.Connection, initials: str) -> int:
+    row = conn.execute(
+        "SELECT COUNT(*) AS count FROM rota_assignments WHERE staff_initials = ? AND period LIKE 'Teacher_Break_Rota_%'",
         (initials,),
     ).fetchone()
     return int(row["count"] or 0)
@@ -1175,14 +1183,12 @@ def strict_assignment_allowed(
         if additional_max_reached(conn, initials):
             return False
     if source == "teacher":
-        if staff_week_duty_count(conn, initials, week) >= max_duties_per_week(conn):
+        if not code.startswith("Teacher_Break_Rota_") and staff_week_duty_count(conn, initials, week) >= max_duties_per_week(conn):
             return False
-        if staff_day_duty_count(conn, initials, week, day) >= max_duties_per_day(conn):
+        if not code.startswith("Teacher_Break_Rota_") and staff_day_duty_count(conn, initials, week, day) >= max_duties_per_day(conn):
             return False
     if code.startswith("Teacher_Break_Rota_"):
         if source != "teacher":
-            return False
-        if teacher_break_week_count(conn, initials, week) >= 1:
             return False
     return custom_rules_allow(conn, initials, role, week, day, code)
 
@@ -1229,14 +1235,12 @@ def candidate_rejection_reason(
     elif additional_max_reached(conn, initials):
         return "additional staff maximum duty limit reached"
     if source == "teacher":
-        if staff_week_duty_count(conn, initials, week) >= max_duties_per_week(conn):
+        if not code.startswith("Teacher_Break_Rota_") and staff_week_duty_count(conn, initials, week) >= max_duties_per_week(conn):
             return f"maximum duties per week reached ({max_duties_per_week(conn)})"
-        if staff_day_duty_count(conn, initials, week, day) >= max_duties_per_day(conn):
+        if not code.startswith("Teacher_Break_Rota_") and staff_day_duty_count(conn, initials, week, day) >= max_duties_per_day(conn):
             return f"maximum duties per day reached ({max_duties_per_day(conn)})"
     if code.startswith("Teacher_Break_Rota_") and source != "teacher":
         return "teaching staff break rota is teaching staff only"
-    if code.startswith("Teacher_Break_Rota_") and teacher_break_week_count(conn, initials, week) >= 1:
-        return "teacher already has one teaching staff break rota duty this week"
     if not custom_rules_allow(conn, initials, role, week, day, code):
         return "blocked by a custom hard rule"
     return None
@@ -1305,6 +1309,17 @@ def available_staff(conn: sqlite3.Connection, week: int, day: str, code: str) ->
                 pastoral_distribution_sort_key(conn, item["initials"], week, day, code)
                 if item["role"] == "Pastoral"
                 else (999, 999, 999, 999, item["initials"]),
+                item["initials"],
+            ),
+        )
+    if code.startswith("Teacher_Break_Rota_"):
+        return sorted(
+            staff,
+            key=lambda item: (
+                0 if teacher_free_periods_remaining(conn, item["initials"]) > 0 else 1,
+                0 if break_subjects and item.get("subject", "") in break_subjects else 1,
+                item.get("subject", ""),
+                teacher_break_total_count(conn, item["initials"]),
                 item["initials"],
             ),
         )
@@ -1621,7 +1636,7 @@ def auto_assign_empty_slots(conn: sqlite3.Connection) -> dict:
     ).fetchall():
         days = (row["days_in_school"] or "1111111111").ljust(10, "1")[:10]
         max_load = FULL_TIME_TEACHING_LOAD - (DAILY_TEACHING_LOAD * days.count("0"))
-        current_duties = conn.execute("SELECT COUNT(*) AS count FROM rota_assignments WHERE staff_initials = ?", (row["initials"],)).fetchone()["count"]
+        current_duties = staff_total_duty_count(conn, row["initials"])
         heavy_rows = conn.execute("SELECT period FROM rota_assignments WHERE staff_initials = ?", (row["initials"],)).fetchall()
         heavy_count = sum(1 for heavy in heavy_rows if duty_is_heavy(heavy["period"]))
         candidates.append(
@@ -1644,7 +1659,7 @@ def auto_assign_empty_slots(conn: sqlite3.Connection) -> dict:
         WHERE COALESCE(is_archived, 0) = 0 AND COALESCE(status, 'Active') = 'Active'
         """
     ).fetchall():
-        current_duties = conn.execute("SELECT COUNT(*) AS count FROM rota_assignments WHERE staff_initials = ?", (row["initials"],)).fetchone()["count"]
+        current_duties = staff_total_duty_count(conn, row["initials"])
         heavy_rows = conn.execute("SELECT period FROM rota_assignments WHERE staff_initials = ?", (row["initials"],)).fetchall()
         heavy_count = sum(1 for heavy in heavy_rows if duty_is_heavy(heavy["period"]))
         candidates.append(
@@ -1718,6 +1733,15 @@ def auto_assign_empty_slots(conn: sqlite3.Connection) -> dict:
                         pastoral_key[1],
                         pastoral_key[2],
                         pastoral_key[3],
+                        -score,
+                        -tie_break,
+                        cand["initials"],
+                    )
+                elif code.startswith("Teacher_Break_Rota_"):
+                    sort_key = (
+                        0 if teacher_free_periods_remaining(conn, cand["initials"]) > 0 else 1,
+                        subject_score,
+                        teacher_break_total_count(conn, cand["initials"]),
                         -score,
                         -tie_break,
                         cand["initials"],
