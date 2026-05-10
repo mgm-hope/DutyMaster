@@ -183,7 +183,7 @@ DEFAULT_RULES = [
     ("Lunch Off-Duty / Rest Protection", "During Period 4 split lunch, Pastoral allocation must preserve the intended rest/off-duty rotation across 4A, 4B, and 4C where possible."),
     ("Period 4A/4B/4C Staffing", "In Period 4A, 4B, and 4C, First Duty is SLT only. Lunch Duty, Pastoral Support, Isolation, and Rest Break are Pastoral only so Pastoral staff can rotate through lunch, support, isolation, and rest."),
     ("Room 90 Manual Fill Only", "Room 90 is manual fill only. Auto-assign skips Room 90, but staff can still be assigned manually from the Pre-Built Duty Events page."),
-    ("Teacher Break Rota", "Add a teacher-only duty between Break and Period 3. Default is 6 staff, adjustable in Rules. This rota is independent of the normal duty algorithm: it does not consume normal duty capacity, can be assigned more than once per week, and prefers teachers with available periods before using teachers with no remaining availability."),
+    ("Teacher Break Rota", "Add a teacher/HOF-only duty between Break and Period 3. SLT are excluded. Default is 6 staff, adjustable in Rules. This rota is independent of the normal duty algorithm: it does not consume normal duty capacity, can be assigned more than once per week, and prefers teachers with available periods before using teachers with no remaining availability."),
 ]
 
 

@@ -1114,7 +1114,7 @@ def custom_rules_allow(conn: sqlite3.Connection, initials: str, role: str, week:
 
 def role_priority_for_duty(code: str) -> list[str]:
     if code.startswith("Teacher_Break_Rota_"):
-        return ["Teacher", "HOF", "SLT"]
+        return ["Teacher", "HOF"]
     if code == "Gate":
         return ["SLT"]
     if code in {"Tutor_1st_Duty", "Tutor_AOW", "P1_Isolation"}:
