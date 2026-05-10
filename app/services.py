@@ -1546,6 +1546,16 @@ def choose_lunch_candidate(conn: sqlite3.Connection, eligible: list[dict], code:
             )
         )
         return eligible[0] if eligible else None
+    teaching = [cand for cand in eligible if cand["source"] == "teacher" and cand["role"] in {"Teacher", "HOF"}]
+    if teaching:
+        scored = []
+        for cand in teaching:
+            score, tie_break = teacher_assignment_score(conn, cand["initials"], week, day, code)
+            under_min = 0 if int(cand.get("duties") or 0) < int(cand.get("min_duties") or 0) else 1
+            scored.append((under_min, -score, -tie_break, staff_lunch_duty_count(conn, cand["initials"]), cand["initials"], cand))
+        scored.sort()
+        return scored[0][-1]
+
     additional_priority = {"ESLT": 0, "Chaplaincy": 1, "Admin": 2}
     additional = [cand for cand in eligible if cand["role"] in additional_priority]
     if additional:
@@ -1558,18 +1568,13 @@ def choose_lunch_candidate(conn: sqlite3.Connection, eligible: list[dict], code:
                 cand["initials"],
             )
         )
-    teaching = [cand for cand in eligible if cand["source"] == "teacher"]
-    if additional:
         return additional[0]
-    if teaching:
-        scored = []
-        for cand in teaching:
-            score, tie_break = teacher_assignment_score(conn, cand["initials"], week, day, code)
-            under_min = 0 if int(cand.get("duties") or 0) < int(cand.get("min_duties") or 0) else 1
-            scored.append((under_min, -score, -tie_break, cand["initials"], cand))
-        scored.sort()
-        return scored[0][-1]
-    return additional[0] if additional else None
+
+    slt = [cand for cand in eligible if cand["role"] == "SLT"]
+    if slt:
+        slt.sort(key=lambda cand: slt_balance_sort_key(conn, cand["initials"], week, day, code))
+        return slt[0]
+    return None
 
 
 def replace_slt_first_duty_with_minimum_teachers(conn: sqlite3.Connection) -> int:
