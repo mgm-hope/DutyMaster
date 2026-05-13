@@ -134,6 +134,18 @@ CREATE TABLE IF NOT EXISTS staff_exclusions (
     last_updated TEXT
 );
 
+CREATE TABLE IF NOT EXISTS staff_unavailability (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    staff_initials TEXT NOT NULL,
+    week INTEGER NOT NULL CHECK(week IN (1,2)),
+    day TEXT NOT NULL,
+    period TEXT NOT NULL,
+    reason TEXT,
+    active INTEGER DEFAULT 1,
+    last_updated TEXT,
+    UNIQUE(staff_initials, week, day, period)
+);
+
 CREATE TABLE IF NOT EXISTS problem_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     timestamp TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -158,6 +170,7 @@ DEFAULT_RULES = [
     ("Break Duty Lead = SLT or Pastoral", "Break Duty Lead can only be assigned to SLT or Pastoral staff."),
     ("Even SLT Isolation Distribution", "SLT isolation duties should be spread as evenly as possible across participating SLT members."),
     ("Balanced SLT Duty Distribution", "SLT duties should be shared as evenly as possible across available SLT members. For SLT-only duties, DutyMaster prioritises the eligible SLT member with the fewest duties so far while still respecting availability, clashes, exclusions, and manual assignments."),
+    ("SLT Part-Time Fair Share", "SLT duty balance is weighted by attendance. For example, an SLT member in school 4 days out of 5 should receive roughly 4/5 of the duty load of a full-time SLT member."),
     ("Even Pastoral Distribution", "Pastoral staff should be spread evenly across Pastoral Support, Room 90, Isolation, late detention, and lunch pastoral duties."),
     ("No Consecutive Same Pastoral Duty", "Pastoral staff should not be assigned to the same duty type in consecutive period blocks on the same day. For example, avoid Isolation followed by Isolation in the next period where another eligible member of staff exists."),
     ("No Double Booking", "Staff cannot be assigned to two duties in the same time slot."),
@@ -267,6 +280,21 @@ def migrate_database(conn: sqlite3.Connection) -> None:
             active INTEGER DEFAULT 1,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             last_updated TEXT
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS staff_unavailability (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            staff_initials TEXT NOT NULL,
+            week INTEGER NOT NULL CHECK(week IN (1,2)),
+            day TEXT NOT NULL,
+            period TEXT NOT NULL,
+            reason TEXT,
+            active INTEGER DEFAULT 1,
+            last_updated TEXT,
+            UNIQUE(staff_initials, week, day, period)
         )
         """
     )

@@ -35,6 +35,7 @@ SNAPSHOT_TABLES = [
     "custom_rules",
     "app_settings",
     "staff_exclusions",
+    "staff_unavailability",
     "problem_log",
 ]
 
@@ -572,6 +573,32 @@ def same_time_assignment_exists(
     return False
 
 
+def staff_unavailable_for_period(
+    conn: sqlite3.Connection,
+    initials: str,
+    week: int,
+    day: str,
+    period: str | None,
+) -> bool:
+    if not period:
+        return False
+    return bool(
+        conn.execute(
+            """
+            SELECT 1
+            FROM staff_unavailability
+            WHERE staff_initials = ?
+              AND week = ?
+              AND day = ?
+              AND period = ?
+              AND active = 1
+            LIMIT 1
+            """,
+            (initials, week, day, period),
+        ).fetchone()
+    )
+
+
 def teacher_available(
     conn: sqlite3.Connection,
     initials: str,
@@ -591,6 +618,9 @@ def teacher_available(
     days = (row["days_in_school"] or "1111111111").ljust(10, "1")[:10]
     idx = (week - 1) * 5 + ROTA_DAYS.index(day)
     if days[idx] != "1":
+        return False
+    requested_period = event_to_availability_period(code)
+    if staff_unavailable_for_period(conn, initials, week, day, requested_period):
         return False
     teaching_period = event_to_timetable_period(code)
     if teaching_period:
@@ -635,6 +665,8 @@ def additional_available(
     except (TypeError, json.JSONDecodeError):
         periods = set()
     requested_period = event_to_availability_period(code)
+    if staff_unavailable_for_period(conn, initials, week, day, requested_period):
+        return False
     if requested_period and requested_period not in periods:
         return False
     return not same_time_assignment_exists(conn, initials, week, day, code, allow_auto_p4_repair)
@@ -1158,11 +1190,29 @@ def role_priority_for_duty_with_settings(conn: sqlite3.Connection, code: str) ->
     return role_priority_for_duty(code)
 
 
+def staff_attendance_fraction(conn: sqlite3.Connection, initials: str) -> float:
+    row = conn.execute(
+        """
+        SELECT days_in_school FROM teachers WHERE initials = ?
+        UNION ALL
+        SELECT days_in_school FROM additional_staff WHERE initials = ?
+        LIMIT 1
+        """,
+        (initials, initials),
+    ).fetchone()
+    days = (row["days_in_school"] if row else "1111111111") or "1111111111"
+    in_days = days.ljust(10, "1")[:10].count("1")
+    return max(in_days / 10, 0.1)
+
+
 def slt_balance_sort_key(conn: sqlite3.Connection, initials: str, week: int, day: str, code: str) -> tuple:
     rows = conn.execute("SELECT period FROM rota_assignments WHERE staff_initials = ?", (initials,)).fetchall()
     heavy_count = sum(1 for row in rows if duty_is_heavy(row["period"]))
+    duty_count = staff_total_duty_count(conn, initials)
+    weighted_count = duty_count / staff_attendance_fraction(conn, initials) if rule_active(conn, "SLT Part-Time Fair Share") else duty_count
     return (
-        staff_total_duty_count(conn, initials),
+        round(weighted_count, 4),
+        duty_count,
         heavy_count,
         previous_non_free_streak(conn, initials, week, day, code),
         initials,

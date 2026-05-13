@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Staff Unavailability</h2>
+
+<section class="panel">
+    <h3>Pre-build 2: non-timetabled lessons / unavailable for duty</h3>
+    <p class="muted">
+        Select one member of staff, tick the periods where they are in a non-timetabled lesson or otherwise unavailable,
+        then save. These periods are treated as hard availability blocks by the main allocation model.
+    </p>
+    <form method="get" action="/staff-unavailability" class="inline-form">
+        <label>
+            Staff
+            <select name="staff">
+                <option value="">Choose staff...</option>
+                {% for item in staff_options %}
+                <option value="{{ item.initials }}" {% if selected_staff == item.initials %}selected{% endif %}>
+                    {{ item.initials }} - {{ item.name }} ({{ item.role }})
+                </option>
+                {% endfor %}
+            </select>
+        </label>
+        <button type="submit">Load staff</button>
+    </form>
+</section>
+
+{% if selected_staff %}
+<form method="post" action="/staff-unavailability/save">
+    <input type="hidden" name="staff_initials" value="{{ selected_staff }}">
+    <section class="panel">
+        <h3>Unavailable periods for {{ selected_staff }}</h3>
+        <div class="table-wrap">
+            <table class="rota-table">
+                <tr><th>Period</th><th colspan="5">Week 1</th><th colspan="5">Week 2</th></tr>
+                <tr><th></th>{% for d in days %}<th>{{ d }}</th>{% endfor %}{% for d in days %}<th>{{ d }}</th>{% endfor %}</tr>
+                {% for period, label in period_options %}
+                <tr>
+                    <th>{{ label }}</th>
+                    {% for w in weeks %}
+                        {% for d in days %}
+                        {% set key = w ~ "|" ~ d ~ "|" ~ period %}
+                        <td>
+                            <label class="unavailability-toggle" title="Tick when unavailable">
+                                <input type="checkbox" name="unavailable_periods" value="{{ key }}" {% if key in unavailable %}checked{% endif %}>
+                                <span>{{ "X" if key in unavailable else "-" }}</span>
+                            </label>
+                        </td>
+                        {% endfor %}
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </table>
+        </div>
+        <button type="submit">Save unavailable periods</button>
+    </section>
+</form>
+{% endif %}
+{% endblock %}

@@ -515,6 +515,51 @@ textarea {
     outline: 3px solid rgba(214, 162, 31, 0.28);
 }
 
+.unavailability-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 34px;
+}
+
+.unavailability-toggle input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.unavailability-toggle span {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 42px;
+    min-height: 34px;
+    background: #ecf8ef;
+    border: 1px solid rgba(38, 107, 61, 0.34);
+    border-radius: 8px;
+    color: var(--success);
+    font-size: 13px;
+    font-weight: 900;
+}
+
+.unavailability-toggle input:checked + span {
+    background: var(--rose);
+    border-color: #efb8c8;
+    color: var(--danger);
+}
+
+.unavailability-toggle input:checked + span::before {
+    content: "X";
+}
+
+.unavailability-toggle input:checked + span {
+    font-size: 0;
+}
+
+.unavailability-toggle input:checked + span::before {
+    font-size: 13px;
+}
+
 .selected-duty-cell {
     background: var(--gold-soft);
     box-shadow: inset 0 0 0 3px rgba(214, 162, 31, 0.55);

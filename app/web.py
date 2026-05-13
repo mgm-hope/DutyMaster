@@ -1376,6 +1376,115 @@ async def manual_adjustment_clear(request: Request, week: int = Form(...), day: 
     return RedirectResponse(f"/manual-adjustment?week={week}&day={day}&period={period}", status_code=303)
 
 
+def _all_staff_options(conn: sqlite3.Connection) -> list[dict]:
+    staff = []
+    for row in conn.execute(
+        """
+        SELECT initials, COALESCE(full_name, initials) AS name, classification AS role, 'teacher' AS source
+        FROM teachers
+        ORDER BY initials
+        """
+    ).fetchall():
+        staff.append(dict(row))
+    for row in conn.execute(
+        """
+        SELECT initials, full_name AS name, category AS role, 'additional' AS source
+        FROM additional_staff
+        WHERE COALESCE(is_archived, 0) = 0
+        ORDER BY category, initials
+        """
+    ).fetchall():
+        staff.append(dict(row))
+    return staff
+
+
+@app.get("/staff-unavailability", response_class=HTMLResponse)
+def staff_unavailability(request: Request, staff: str = ""):
+    redirect = _require_login(request)
+    if redirect:
+        return redirect
+    selected = (staff or "").strip().upper()
+    period_options = [
+        ("Tutor", "Tutor"),
+        ("1", "Period 1"),
+        ("2", "Period 2"),
+        ("Break", "Break"),
+        ("TeacherBreak", "Teacher Break"),
+        ("3", "Period 3"),
+        ("4", "Period 4 / Lunch"),
+        ("5", "Period 5"),
+        ("6", "Period 6"),
+        ("7", "Period 7"),
+    ]
+    with _conn_context() as conn:
+        staff_options = _all_staff_options(conn)
+        if selected and not any(item["initials"] == selected for item in staff_options):
+            selected = ""
+        unavailable = set()
+        if selected:
+            unavailable = {
+                f"{row['week']}|{row['day']}|{row['period']}"
+                for row in conn.execute(
+                    """
+                    SELECT week, day, period
+                    FROM staff_unavailability
+                    WHERE staff_initials = ? AND active = 1
+                    """,
+                    (selected,),
+                ).fetchall()
+            }
+    return templates.TemplateResponse(
+        "staff_unavailability.html",
+        _base_context(
+            request,
+            "Staff Unavailability",
+            staff_options=staff_options,
+            selected_staff=selected,
+            period_options=period_options,
+            unavailable=unavailable,
+        ),
+    )
+
+
+@app.post("/staff-unavailability/save")
+async def staff_unavailability_save(
+    request: Request,
+    staff_initials: str = Form(...),
+    unavailable_periods: list[str] = Form([]),
+):
+    redirect = _require_login(request)
+    if redirect:
+        return redirect
+    initials = staff_initials.strip().upper()
+    allowed_periods = {"Tutor", "1", "2", "Break", "TeacherBreak", "3", "4", "5", "6", "7"}
+    selected = set()
+    for item in unavailable_periods:
+        try:
+            week_text, day, period = item.split("|", 2)
+            week = int(week_text)
+        except ValueError:
+            continue
+        if week not in ROTA_WEEKS or day not in ROTA_DAYS or period not in allowed_periods:
+            continue
+        selected.add((week, day, period))
+    with _conn_context() as conn:
+        create_throttled_autosave(conn, "Staff unavailability edit autosave")
+        conn.execute("DELETE FROM staff_unavailability WHERE staff_initials = ?", (initials,))
+        for week, day, period in sorted(selected):
+            conn.execute(
+                """
+                INSERT INTO staff_unavailability(staff_initials, week, day, period, reason, active, last_updated)
+                VALUES (?, ?, ?, ?, ?, 1, ?)
+                ON CONFLICT(staff_initials, week, day, period)
+                DO UPDATE SET active = 1, reason = excluded.reason, last_updated = excluded.last_updated
+                """,
+                (initials, week, day, period, "Non-timetabled lesson / unavailable for duty", datetime.now().isoformat()),
+            )
+        conn.commit()
+    _flash(request, f"Saved unavailable periods for {initials}.")
+    return RedirectResponse(f"/staff-unavailability?staff={initials}", status_code=303)
+
+
 @app.get("/staff-timetable", response_class=HTMLResponse)
 def staff_timetable(request: Request, group: str = "Teacher", staff: str = ""):
     redirect = _require_login(request)
