@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="print-actions">
+    <button type="button" onclick="window.print()">Print</button>
+    <a class="button-link secondary" href="/proposed">Back to Proposed Timetable</a>
+</div>
+
+<section class="print-sheet">
+    <h2>Proposed Duty Timetable</h2>
+    <table class="print-rota-table">
+        <tr>
+            <th>Duty</th>
+            <th colspan="5">Week 1</th>
+            <th colspan="5">Week 2</th>
+        </tr>
+        <tr>
+            <th></th>
+            {% for d in days %}<th>{{ d }}</th>{% endfor %}
+            {% for d in days %}<th>{{ d }}</th>{% endfor %}
+        </tr>
+        {% for section, events in sections %}
+        <tr class="print-section-row">
+            <th colspan="11">{{ section }}</th>
+        </tr>
+        {% for code, label in events %}
+        <tr>
+            <th>{{ label }}</th>
+            {% for w in weeks %}
+                {% for d in days %}
+                <td>{{ assignments.get(w ~ ":" ~ d ~ ":" ~ code, "") }}</td>
+                {% endfor %}
+            {% endfor %}
+        </tr>
+        {% endfor %}
+        {% endfor %}
+    </table>
+</section>
+{% endblock %}

@@ -1619,6 +1619,38 @@ def proposed_download(request: Request):
     )
 
 
+@app.get("/proposed/print", response_class=HTMLResponse)
+def proposed_print(request: Request):
+    redirect = _require_login(request)
+    if redirect:
+        return redirect
+    with _conn_context() as conn:
+        active_codes = active_duty_codes(conn)
+        assignment_rows = conn.execute(
+            """
+            SELECT week, day, period, staff_initials
+            FROM rota_assignments
+            ORDER BY week,
+                     CASE day WHEN 'Mon' THEN 1 WHEN 'Tue' THEN 2 WHEN 'Wed' THEN 3 WHEN 'Thu' THEN 4 ELSE 5 END
+            """
+        ).fetchall()
+        assignments = {
+            f"{row['week']}:{row['day']}:{row['period']}": row["staff_initials"] or ""
+            for row in assignment_rows
+            if row["period"] in active_codes
+        }
+        sections = active_duty_sections(conn)
+    return templates.TemplateResponse(
+        "proposed_print.html",
+        _base_context(
+            request,
+            "Print Proposed Timetable",
+            sections=sections,
+            assignments=assignments,
+        ),
+    )
+
+
 @app.get("/versions", response_class=HTMLResponse)
 def versions(request: Request):
     redirect = _require_login(request)
